@@ -54,7 +54,7 @@ frame new --defaults --dir build/out ./my-template my-app
 frame new https://github.com/owner/repo my-app
 ```
 
-On success `frame` prints the created-file count, the target directory, and the next step. Any error prints `frame: <message>` and exits 1. Cancelling a prompt exits 1 and writes nothing.
+On success `frame` prints the created-file count, the target directory, and the next step. A resolution, configuration, or generation error prints `frame: <message>` and exits 1. Cancelling a prompt exits 1 and writes nothing. Invalid command-line syntax (an unknown option or a missing `<source>`) is reported by the argument parser and exits 2.
 
 ## Writing a template
 
@@ -76,7 +76,7 @@ Everything under `template/` is copied to the output. File and directory names a
          :options ["sqlite" "postgres"] :default "sqlite"}
         {:key :auth :prompt "Include authentication?" :type :boolean :default true}
         {:key :author :prompt "Author name" :type :string :default ""
-         :validate {:pattern "^.*$" :msg "Author is required"}}]  ; :validate optional
+         :validate {:pattern "^.+$" :msg "Author name cannot be empty"}}]  ; :validate optional
  :computed {:top-ns "{{ project-name | snake_case }}"}
  :raw ["**/*.png"]}
 ```
