@@ -1,5 +1,7 @@
 # Frame Initial Implementation Plan
 
+> **Status: COMPLETE** (all 12 tasks). See the completion summary at the end.
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build `frame`, a declarative project-templater CLI in let-go: a Liquid-like template engine with exact whitespace control, templated file/dir names, an EDN template config, and an interactive tiny-tui question flow behind `frame new <source> [name]`.
@@ -445,3 +447,41 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 ## Out of scope (deliberate, future extensions)
 
 - `assign` tag (covered by `:computed`), for-loops, includes/inheritance, `{% raw %}` tag (covered by `:raw` globs), post-generation hooks, template update/re-render of existing projects, Windows path support, `frame check` template linter, migrating clojure-stack-lite itself (the acceptance target for a follow-up plan).
+
+---
+
+## Completion Summary
+
+All 12 tasks are implemented, tested, and committed. `lgx check` is green: **111 tests, 207 assertions, 0 failures**, clean fmt and lint. The `frame new` CLI works end-to-end in both interpreted and built-binary form, and its byte-exact golden output is locked by `test/frame/fixtures/demo-expected/`.
+
+### What was implemented
+
+- **Template engine** (`src/frame/template/`), pure and exhaustively unit-tested: `filters` (case conversions + lower/upper/capitalize via one word tokenizer), `lexer` (tokens + the line-ownership whitespace rule), `parser` (if/case block tree + a recursive-descent condition grammar), `render` (tree-walk with truthiness, comparisons, filters; `render-string` and `render-segment`).
+- **Supporting modules**: `glob` (`*`/`**` matcher for `:raw`), `config` (read + validate `frame.edn`), `prompt` (`--var` parsing, defaults resolution, computed vars, and the tiny-tui interactive flow), `source` (local-path + git-URL resolution with a content-addressed cache under `$FRAME_HOME`), `generate` (walk → render paths + contents in memory → collision/traversal checks → single write pass).
+- **CLI**: `frame new [options] <source> [name]` wired through tiny-cli, with `--defaults`, `--dir`, and `--var`; uniform `frame: <message>` errors (exit 1); `main.lg` updated and the `core.lg` scaffold removed.
+- **Docs**: a full `README.md` (usage, template-author guide, syntax reference, the whitespace rule with a before/after example, path templating, and a `frame.edn` reference).
+
+### Issues encountered / notable decisions
+
+- **clj-kondo vs. let-go**: added `.clj-kondo/config.edn` (adapted from lgx) so the linter tolerates let-go's typeless `(catch e ...)` and builtins. A recurring wrinkle: any binding referenced *only* inside a catch body reads as unused to kondo, which shaped a few refactors (inline the catch body where the binding is already used elsewhere).
+- **tiny-cli constraints** forced the CLI shape: options must precede `<source>`, the optional `name` is a `:variadic`, and `--var` (not repeatable) takes a comma-separated value.
+- **tiny-tui** `confirm` cannot honor a `false` default or signal cancel, so booleans prompt with a two-item `select` instead.
+- **Codex reviews caught real bugs** that were fixed with regression tests: a parser infinite-loop on a lone `=`/`!`; quoted-literal whitespace collapse in tags; `frame.edn` trailing-data acceptance; a git-cache SHA/content mismatch race; and, most important, **path-traversal and file/directory prefix collisions in the generator** (a template could otherwise write outside the target).
+
+### Deviations from the plan (all intent-preserving)
+
+- `.clj-kondo/config.edn` added (not in the plan) so `lgx check` lint passes.
+- Lexer drops emptied text tokens and keeps pre-strip `:line` on text tokens (only tag/output lines feed errors).
+- Condition tokenizer is a char scanner (quoted literals may contain spaces; `db==postgres` works unspaced).
+- Renderer's unresolved-output check uses `contains?` (so a `false`/`""` var renders) and comparisons stringify both operands (so `auth == false` works).
+- Glob is a hand-rolled two-pointer matcher (avoids RE2 escaping).
+- `source` uses a full clone + `checkout <sha>` (not `--depth 1`) to keep the cache content-addressed under a concurrent HEAD move.
+- `generate` relies on verified binary-safe `slurp`/`spit` (no `cp` fallback); rejects `..`/absolute destinations and file-vs-directory prefix collisions.
+- CLI: options-before-`<source>`, variadic `name`, comma-separated `--var`, handler named `cmd-new!`.
+- Interactive project-name prompt and var prompts use two brief tiny-tui sessions rather than one.
+
+### What the plan could have specified better
+
+- **Toolchain lint setup was unmentioned.** The plan never accounted for clj-kondo needing a config to parse let-go's `(catch e ...)`; since `lgx check` (which the plan required green at every commit) includes lint, this was load-bearing infrastructure discovered only at the first real commit. A one-line note to add `.clj-kondo/config.edn` up front would have saved a mid-task detour.
+- **tiny-cli's option/positional ordering and lack of repeatable options** were assumed away ("optional positional", "repeatable `--var`"). Both are unsupported and materially change the CLI surface; pinning the tiny-cli capabilities during planning would have set the command shape correctly from the start.
+- **Security of rendered destination paths** (path traversal, file/dir collisions) was not called out, yet it matters precisely because sources can be remote git URLs. A planned requirement would have put those guards in the first generator pass rather than a follow-up fix.
