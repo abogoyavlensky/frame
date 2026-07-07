@@ -14,50 +14,85 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest cond-bare-var
-  (is (= {:op :term :kind :ident :value "x"}
+  (is (= {:op :term
+          :kind :ident
+          :value "x"}
          (p/parse-cond "x"))))
 
 (deftest cond-not
-  (is (= {:op :not :expr {:op :term :kind :ident :value "x"}}
+  (is (= {:op :not
+          :expr {:op :term
+                 :kind :ident
+                 :value "x"}}
          (p/parse-cond "not x"))))
 
 (deftest cond-eq-bare
-  (is (= {:op :cmp :cmp-op :eq
-          :left {:op :term :kind :ident :value "db"}
-          :right {:op :term :kind :ident :value "postgres"}}
+  (is (= {:op :cmp
+          :cmp-op :eq
+          :left {:op :term
+                 :kind :ident
+                 :value "db"}
+          :right {:op :term
+                  :kind :ident
+                  :value "postgres"}}
          (p/parse-cond "db == postgres"))))
 
 (deftest cond-eq-quoted
-  (is (= {:op :cmp :cmp-op :eq
-          :left {:op :term :kind :ident :value "db"}
-          :right {:op :term :kind :str :value "postgres"}}
+  (is (= {:op :cmp
+          :cmp-op :eq
+          :left {:op :term
+                 :kind :ident
+                 :value "db"}
+          :right {:op :term
+                  :kind :str
+                  :value "postgres"}}
          (p/parse-cond "db == \"postgres\""))))
 
 (deftest cond-neq
-  (is (= {:op :cmp :cmp-op :neq
-          :left {:op :term :kind :ident :value "a"}
-          :right {:op :term :kind :ident :value "b"}}
+  (is (= {:op :cmp
+          :cmp-op :neq
+          :left {:op :term
+                 :kind :ident
+                 :value "a"}
+          :right {:op :term
+                  :kind :ident
+                  :value "b"}}
          (p/parse-cond "a != b"))))
 
 (deftest cond-and
   (is (= {:op :and
-          :left {:op :term :kind :ident :value "a"}
-          :right {:op :term :kind :ident :value "b"}}
+          :left {:op :term
+                 :kind :ident
+                 :value "a"}
+          :right {:op :term
+                  :kind :ident
+                  :value "b"}}
          (p/parse-cond "a and b"))))
 
 (deftest cond-or-and-precedence
   ;; "a or b and c" parses as "a or (b and c)".
   (is (= {:op :or
-          :left {:op :term :kind :ident :value "a"}
+          :left {:op :term
+                 :kind :ident
+                 :value "a"}
           :right {:op :and
-                  :left {:op :term :kind :ident :value "b"}
-                  :right {:op :term :kind :ident :value "c"}}}
+                  :left {:op :term
+                         :kind :ident
+                         :value "b"}
+                  :right {:op :term
+                          :kind :ident
+                          :value "c"}}}
          (p/parse-cond "a or b and c"))))
 
 (deftest cond-quoted-with-spaces
-  (is (= {:op :cmp :cmp-op :eq
-          :left {:op :term :kind :ident :value "name"}
-          :right {:op :term :kind :str :value "hello world"}}
+  (is (= {:op :cmp
+          :cmp-op :eq
+          :left {:op :term
+                 :kind :ident
+                 :value "name"}
+          :right {:op :term
+                  :kind :str
+                  :value "hello world"}}
          (p/parse-cond "name == \"hello world\""))))
 
 (deftest cond-garbage-throws
@@ -70,11 +105,15 @@
 ;; ---------------------------------------------------------------------------
 
 (deftest parse-text-node
-  (is (= [{:node :text :value "hello"}]
+  (is (= [{:node :text
+           :value "hello"}]
          (parse-str "hello"))))
 
 (deftest parse-output-node
-  (is (= [{:node :output :var "x" :filters [] :line 1}]
+  (is (= [{:node :output
+           :var "x"
+           :filters []
+           :line 1}]
          (parse-str "{{ x }}"))))
 
 (deftest parse-output-with-filters
@@ -86,26 +125,41 @@
 
 (deftest parse-simple-if
   (is (= [{:node :if
-           :branches [{:cond {:op :term :kind :ident :value "x"}
-                       :body [{:node :text :value "A"}]}]
+           :branches [{:cond {:op :term
+                              :kind :ident
+                              :value "x"}
+                       :body [{:node :text
+                               :value "A"}]}]
            :else nil}]
          (parse-str "{% if x %}A{% endif %}"))))
 
 (deftest parse-if-elsif-else
   (is (= [{:node :if
-           :branches [{:cond {:op :term :kind :ident :value "a"}
-                       :body [{:node :text :value "A"}]}
-                      {:cond {:op :term :kind :ident :value "b"}
-                       :body [{:node :text :value "B"}]}]
-           :else [{:node :text :value "C"}]}]
+           :branches [{:cond {:op :term
+                              :kind :ident
+                              :value "a"}
+                       :body [{:node :text
+                               :value "A"}]}
+                      {:cond {:op :term
+                              :kind :ident
+                              :value "b"}
+                       :body [{:node :text
+                               :value "B"}]}]
+           :else [{:node :text
+                   :value "C"}]}]
          (parse-str "{% if a %}A{% elsif b %}B{% else %}C{% endif %}"))))
 
 (deftest parse-nested-if
   (is (= [{:node :if
-           :branches [{:cond {:op :term :kind :ident :value "a"}
+           :branches [{:cond {:op :term
+                              :kind :ident
+                              :value "a"}
                        :body [{:node :if
-                               :branches [{:cond {:op :term :kind :ident :value "b"}
-                                           :body [{:node :text :value "X"}]}]
+                               :branches [{:cond {:op :term
+                                                  :kind :ident
+                                                  :value "b"}
+                                           :body [{:node :text
+                                                   :value "X"}]}]
                                :else nil}]}]
            :else nil}]
          (parse-str "{% if a %}{% if b %}X{% endif %}{% endif %}"))))
@@ -113,9 +167,14 @@
 (deftest parse-case-with-else
   (is (= [{:node :case
            :var "db"
-           :whens [{:value "sqlite" :body [{:node :text :value "S"}]}
-                   {:value "postgres" :body [{:node :text :value "P"}]}]
-           :else [{:node :text :value "D"}]}]
+           :whens [{:value "sqlite"
+                    :body [{:node :text
+                            :value "S"}]}
+                   {:value "postgres"
+                    :body [{:node :text
+                            :value "P"}]}]
+           :else [{:node :text
+                   :value "D"}]}]
          (parse-str (str "{% case db %}"
                          "{% when \"sqlite\" %}S"
                          "{% when postgres %}P"
@@ -125,7 +184,9 @@
 (deftest parse-case-discards-text-before-first-when
   (is (= [{:node :case
            :var "db"
-           :whens [{:value "sqlite" :body [{:node :text :value "S"}]}]
+           :whens [{:value "sqlite"
+                    :body [{:node :text
+                            :value "S"}]}]
            :else nil}]
          (parse-str "{% case db %}   ignored   {% when sqlite %}S{% endcase %}"))))
 

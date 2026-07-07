@@ -1,0 +1,341 @@
+(ns frame.template.parser
+  (:require [string :as str]))
+
+;; ---------------------------------------------------------------------------
+;; Parser: tokens -> node tree, plus the condition mini-grammar.
+;;
+;; Block nodes (dispatch on :node):
+;;   {:node :text   :value s}
+;;   {:node :output :var k :filters [names] :line n}
+;;   {:node :if     :branches [{:cond ast :body [nodes]} ...] :else [nodes]|nil}
+;;   {:node :case   :var k :whens [{:value s :body [nodes]} ...] :else [nodes]|nil}
+;;
+;; Condition nodes (dispatch on :op):
+;;   {:op :or   :left ast :right ast}
+;;   {:op :and  :left ast :right ast}
+;;   {:op :not  :expr ast}
+;;   {:op :cmp  :cmp-op :eq|:neq :left term :right term}
+;;   {:op :term :kind :ident|:str :value s}
+;; ---------------------------------------------------------------------------
+
+;; ---------------------------------------------------------------------------
+;; Condition tokenizer
+;;
+;; Splits a condition string into string tokens, honoring quoted literals
+;; (which may contain spaces) and treating == / != as their own tokens. Bare
+;; words run until whitespace, a quote, or an operator char.
+;; ---------------------------------------------------------------------------
+
+(defn- ws-char? [c]
+  (or (= c \space) (= c \tab) (= c \newline) (= c \return)))
+
+(defn- find-char [v start c]
+  (let [n (count v)]
+    (loop [j start]
+      (cond
+        (>= j n) nil
+        (= (nth v j) c) j
+        :else (recur (inc j))))))
+
+(defn- bare-end [v start]
+  (let [n (count v)]
+    (loop [j start]
+      (if (or (>= j n)
+              (let [c (nth v j)]
+                (or (ws-char? c) (= c \") (= c \=) (= c \!))))
+        j
+        (recur (inc j))))))
+
+(defn- cond-tokens [s]
+  (let [v (vec (seq s))
+        n (count v)]
+    (loop [i 0
+           toks []]
+      (if (>= i n)
+        toks
+        (let [c (nth v i)]
+          (cond
+            (ws-char? c)
+            (recur (inc i) toks)
+
+            (and (= c \=) (< (inc i) n) (= (nth v (inc i)) \=))
+            (recur (+ i 2) (conj toks "=="))
+
+            (and (= c \!) (< (inc i) n) (= (nth v (inc i)) \=))
+            (recur (+ i 2) (conj toks "!="))
+
+            (= c \")
+            (let [close (find-char v (inc i) \")]
+              (when (nil? close)
+                (throw (ex-info "unterminated string in condition"
+                                {:reason :syntax})))
+              (recur (inc close)
+                     (conj toks (str "\"" (apply str (subvec v (inc i) close)) "\""))))
+
+            :else
+            (let [end (bare-end v i)]
+              (recur end (conj toks (apply str (subvec v i end)))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Condition recursive descent (and binds tighter than or)
+;; ---------------------------------------------------------------------------
+
+(def ^:private cond-keywords #{"==" "!=" "and" "or" "not"})
+
+(defn- quoted? [t]
+  (and (>= (count t) 2)
+       (str/starts-with? t "\"")
+       (str/ends-with? t "\"")))
+
+(defn- parse-term [toks i]
+  (when (>= i (count toks))
+    (throw (ex-info "unexpected end of condition" {:reason :syntax})))
+  (let [t (nth toks i)]
+    (cond
+      (contains? cond-keywords t)
+      (throw (ex-info (str "unexpected '" t "' in condition") {:reason :syntax}))
+
+      (quoted? t)
+      [{:op :term
+        :kind :str
+        :value (subs t 1 (dec (count t)))} (inc i)]
+
+      :else
+      [{:op :term
+        :kind :ident
+        :value t} (inc i)])))
+
+(defn- parse-comparison [toks i]
+  (let [[left i] (parse-term toks i)]
+    (if (and (< i (count toks))
+             (contains? #{"==" "!="} (nth toks i)))
+      (let [op (nth toks i)
+            [right i] (parse-term toks (inc i))]
+        [{:op :cmp
+          :cmp-op (if (= op "==") :eq :neq)
+          :left left
+          :right right} i])
+      [left i])))
+
+(defn- parse-unary [toks i]
+  (if (and (< i (count toks)) (= (nth toks i) "not"))
+    (let [[e i] (parse-comparison toks (inc i))]
+      [{:op :not
+        :expr e} i])
+    (parse-comparison toks i)))
+
+(defn- parse-and [toks i]
+  (loop [[left i] (parse-unary toks i)]
+    (if (and (< i (count toks)) (= (nth toks i) "and"))
+      (let [[right i] (parse-unary toks (inc i))]
+        (recur [{:op :and
+                 :left left
+                 :right right} i]))
+      [left i])))
+
+(defn- parse-or [toks i]
+  (loop [[left i] (parse-and toks i)]
+    (if (and (< i (count toks)) (= (nth toks i) "or"))
+      (let [[right i] (parse-and toks (inc i))]
+        (recur [{:op :or
+                 :left left
+                 :right right} i]))
+      [left i])))
+
+(defn parse-cond
+  "Parse a condition string into a condition AST. Throws ex-info
+   {:reason :syntax} on malformed input."
+  [s]
+  (let [toks (cond-tokens s)]
+    (when (empty? toks)
+      (throw (ex-info "empty condition" {:reason :syntax})))
+    (let [[ast i] (parse-or toks 0)]
+      (when (< i (count toks))
+        (throw (ex-info (str "unexpected '" (nth toks i) "' in condition")
+                        {:reason :syntax})))
+      ast)))
+
+;; ---------------------------------------------------------------------------
+;; Tag / output helpers
+;; ---------------------------------------------------------------------------
+
+(def ^:private block-keywords
+  #{"if" "elsif" "else" "endif" "case" "when" "endcase"})
+
+(defn- tag-parts
+  "Split a tag token's value into {:kw first-word :rest the-remainder}."
+  [tok]
+  (let [parts (str/split (str/trim (:value tok)) #"\s+")]
+    {:kw (first parts)
+     :rest (str/join " " (rest parts))}))
+
+(defn- unquote-literal [s]
+  (let [s (str/trim s)]
+    (if (and (>= (count s) 2)
+             (or (and (str/starts-with? s "\"") (str/ends-with? s "\""))
+                 (and (str/starts-with? s "'") (str/ends-with? s "'"))))
+      (subs s 1 (dec (count s)))
+      s)))
+
+(defn- parse-output [tok]
+  (let [parts (str/split (:value tok) "|")]
+    {:node :output
+     :var (str/trim (first parts))
+     :filters (vec (map str/trim (rest parts)))
+     :line (:line tok)}))
+
+;; ---------------------------------------------------------------------------
+;; Block recursive descent
+;;
+;; parse-body reads nodes from `pos` until it meets a tag whose keyword is in
+;; `stop-set` (returned but not consumed) or EOF. Returns
+;; {:nodes v :pos p :stop kw|nil :stop-tok tok|nil}.
+;; ---------------------------------------------------------------------------
+
+(declare parse-body)
+
+(defn- parse-if [tokens pos]
+  (let [open (nth tokens pos)
+        stop-set #{"elsif" "else" "endif"}]
+    (loop [pos (inc pos)
+           pending-cond (parse-cond (:rest (tag-parts open)))
+           in-else? false
+           branches []
+           else-body nil]
+      (let [res (parse-body tokens pos stop-set)
+            stop (:stop res)
+            stop-tok (:stop-tok res)
+            spos (:pos res)]
+        (when (nil? stop)
+          (throw (ex-info "unclosed 'if' tag"
+                          {:reason :syntax
+                           :line (:line open)})))
+        (let [branches (if in-else?
+                         branches
+                         (conj branches {:cond pending-cond
+                                         :body (:nodes res)}))
+              else-body (if in-else? (:nodes res) else-body)]
+          (cond
+            (= stop "endif")
+            {:node {:node :if
+                    :branches branches
+                    :else else-body}
+             :pos (inc spos)}
+
+            (= stop "elsif")
+            (do
+              (when in-else?
+                (throw (ex-info "'elsif' after 'else'"
+                                {:reason :syntax
+                                 :line (:line stop-tok)})))
+              (recur (inc spos)
+                     (parse-cond (:rest (tag-parts stop-tok)))
+                     false branches else-body))
+
+            :else ;; "else"
+            (do
+              (when in-else?
+                (throw (ex-info "duplicate 'else'"
+                                {:reason :syntax
+                                 :line (:line stop-tok)})))
+              (recur (inc spos) nil true branches else-body))))))))
+
+(defn- parse-case [tokens pos]
+  (let [open (nth tokens pos)
+        var (str/trim (:rest (tag-parts open)))
+        stop-set #{"when" "else" "endcase"}
+        pre (parse-body tokens (inc pos) stop-set)] ;; text before first when is discarded
+    (when (nil? (:stop pre))
+      (throw (ex-info "unclosed 'case' tag"
+                      {:reason :syntax
+                       :line (:line open)})))
+    (loop [pos (:pos pre)
+           stop (:stop pre)
+           stop-tok (:stop-tok pre)
+           whens []
+           else-body nil
+           in-else? false]
+      (cond
+        (= stop "endcase")
+        {:node {:node :case
+                :var var
+                :whens whens
+                :else else-body}
+         :pos (inc pos)}
+
+        (= stop "when")
+        (do
+          (when in-else?
+            (throw (ex-info "'when' after 'else'"
+                            {:reason :syntax
+                             :line (:line stop-tok)})))
+          (let [when-val (unquote-literal (:rest (tag-parts stop-tok)))
+                res (parse-body tokens (inc pos) stop-set)]
+            (when (nil? (:stop res))
+              (throw (ex-info "unclosed 'case' tag"
+                              {:reason :syntax
+                               :line (:line open)})))
+            (recur (:pos res) (:stop res) (:stop-tok res)
+                   (conj whens {:value when-val
+                                :body (:nodes res)})
+                   else-body in-else?)))
+
+        :else ;; "else"
+        (do
+          (when in-else?
+            (throw (ex-info "duplicate 'else' in case"
+                            {:reason :syntax
+                             :line (:line stop-tok)})))
+          (let [res (parse-body tokens (inc pos) stop-set)]
+            (when (nil? (:stop res))
+              (throw (ex-info "unclosed 'case' tag"
+                              {:reason :syntax
+                               :line (:line open)})))
+            (recur (:pos res) (:stop res) (:stop-tok res)
+                   whens (:nodes res) true)))))))
+
+(defn- parse-body [tokens pos stop-set]
+  (loop [pos pos
+         nodes []]
+    (if (>= pos (count tokens))
+      {:nodes nodes
+       :pos pos
+       :stop nil
+       :stop-tok nil}
+      (let [tok (nth tokens pos)]
+        (case (:type tok)
+          :text (recur (inc pos) (conj nodes {:node :text
+                                              :value (:value tok)}))
+          :output (recur (inc pos) (conj nodes (parse-output tok)))
+          :tag
+          (let [{:keys [kw]} (tag-parts tok)]
+            (cond
+              (contains? stop-set kw)
+              {:nodes nodes
+               :pos pos
+               :stop kw
+               :stop-tok tok}
+
+              (= kw "if")
+              (let [{:keys [node pos]} (parse-if tokens pos)]
+                (recur pos (conj nodes node)))
+
+              (= kw "case")
+              (let [{:keys [node pos]} (parse-case tokens pos)]
+                (recur pos (conj nodes node)))
+
+              (contains? block-keywords kw)
+              (throw (ex-info (str "unexpected '" kw "' tag")
+                              {:reason :syntax
+                               :line (:line tok)}))
+
+              :else
+              (throw (ex-info (str "unknown tag: '" kw "'")
+                              {:reason :syntax
+                               :line (:line tok)})))))))))
+
+(defn parse
+  "Parse a token vector into a node tree. Throws ex-info {:reason :syntax
+   :line n} on mismatched or unknown tags."
+  [tokens]
+  (:nodes (parse-body tokens 0 #{})))

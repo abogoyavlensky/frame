@@ -227,19 +227,20 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 - Create: `src/frame/template/parser.lg`
 - Test: `test/frame/template/parser_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Two public fns. `(parse-cond s)` → condition AST; cover: bare var, `not x`, `x == y` bare and `x == "y"` quoted, `!=`, `a and b`, `a or b and c` (and binds tighter), garbage → `ex-info {:reason :syntax}`. `(parse tokens)` → node tree; nodes are `{:node :text :value s}`, `{:node :output :var k :filters [names] :line n}`, `{:node :if :branches [{:cond ast :body [nodes]}...] :else [nodes]}`, `{:node :case :var k :whens [{:value s :body [nodes]}...] :else [nodes]}`. Cover: nesting if-in-if; `elsif` chains; case with else; errors with `:line`: `endif` without `if`, unclosed `if` at EOF, `elsif` after `else`, `when` outside `case`, unknown tag word.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test test/frame/template/parser_test.lg` — Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Tag inner text split on whitespace to dispatch the keyword (`if`/`elsif`/`else`/`endif`/`case`/`when`/`endcase`). Recursive-descent block parser over the token vector (index-passing, since let-go is functional); condition parser tokenizes on whitespace with `==`/`!=` as their own tokens, then the grammar from the design. Output tokens split on `|`, first part the var, rest filter names.
+  > Deviation: condition tokenizer is a char scanner (not a plain whitespace split) so quoted literals may contain spaces and `db==postgres` works unspaced. Term nodes tagged `:kind :ident|:str`; the renderer resolves idents and falls back to the ident string in comparisons.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test test/frame/template/parser_test.lg` — Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: template parser with if/case blocks and condition grammar"`
 
 ### Task 5: Renderer
