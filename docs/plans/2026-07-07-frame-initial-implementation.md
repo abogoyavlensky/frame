@@ -409,19 +409,23 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 - Modify: `main.lg`
 - Delete: `src/frame/core.lg`, `test/frame/core_test.lg`
 
-- [ ] **Step 1: Wire the command**
+- [x] **Step 1: Wire the command**
   `main.lg` app spec: command `new`, args `source` (required), `name` (optional positional), opts `--var` (repeatable — check tiny-cli's repeatable-option support; if absent, accept comma-separated), `--defaults`, `--dir` (the exact output directory; default `./<project-name>` — does not affect the `project-name` var itself). `new.lg` orchestrates: resolve source → read config → validate/prompt project-name (positional wins; validate `^[a-z][a-z0-9-]*$`) → check target empty (lgx `validate-target!` logic) → answers (`ask!` or defaults) → `compute-vars` → `generate!` → print summary + next steps. All `ex-info`s caught at this level and printed as `frame: <message>`, exit 1; cancel from tui → exit 1 silently.
+  > Deviation (forced by tiny-cli): options must come **before** `<source>` (tiny-cli parses options only before the first positional). `name` is a `:variadic` (optional positional; >1 token errors). `--var` isn't repeatable in tiny-cli, so it takes a comma-separated `key=value,key=value` value. Handler named `cmd-new!` (avoids shadowing `clojure.core/run!`).
 
-- [ ] **Step 2: End-to-end smoke, non-interactive**
+- [x] **Step 2: End-to-end smoke, non-interactive**
   Run: `lgx run -- new test/frame/fixtures/demo-template demo-app --defaults` in a temp cwd — Expected: project created matching the golden tree; run again — Expected: `frame: target directory already exists...`. Then `--dir some/other/place`: files land exactly there while contents still use `demo-app` as the project name.
+  > Verified: `new --defaults --dir <tmp> <fixture> demo-app` matches the golden tree byte-for-byte; re-run errors "target directory already exists and is not empty" (exit 1); `--var db=postgres,auth=false` flips the migration/case/auth outputs. (Ran via the interpreter from the project dir with `--dir`, since `lgx run` needs the project's lgx.edn; the temp-cwd default-target case is covered by the binary in Step 4.)
 
-- [ ] **Step 3: End-to-end smoke, interactive**
+- [x] **Step 3: End-to-end smoke, interactive**
   Run: `lgx run -- new test/frame/fixtures/demo-template` in a terminal; answer prompts; confirm inline session look and generated output. (Manual step — needs a TTY.)
+  > Verified as far as headlessly possible: on a non-TTY the prompt path fails cleanly with `frame: tiny-tui requires a terminal` (exit 1, no hang); a fully `--var`-pre-answered run needs no TTY and generates correctly. Live TTY interaction remains a manual step.
 
-- [ ] **Step 4: Build and verify binary**
+- [x] **Step 4: Build and verify binary**
   Run: `lgx build && ./bin/frame new test/frame/fixtures/demo-template demo-app2 --defaults` — Expected: same output as interpreted run.
+  > Verified: `bin/frame` built; run from a temp cwd it created `./demo-app2` (default target) matching the golden tree (with the demo-app2 name substituted). `bin/` is gitignored.
 
-- [ ] **Step 5: Run all checks and commit**
+- [x] **Step 5: Run all checks and commit**
   Run: `lgx check` — Expected: green.
   `git commit -m "feat: frame new command with interactive and defaults modes"`
 

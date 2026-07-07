@@ -1,0 +1,91 @@
+(ns frame.new
+  (:require [frame.config :as config]
+            [frame.generate :as generate]
+            [frame.prompt :as prompt]
+            [frame.source :as source]
+            [string :as str]))
+
+;; ---------------------------------------------------------------------------
+;; `frame new` orchestration: resolve source -> read config -> resolve the
+;; project name -> check the target -> collect answers -> compute -> generate.
+;; All ex-infos surface as `frame: <message>` on stderr with exit 1; a cancel
+;; from a tui prompt exits 1 silently.
+;; ---------------------------------------------------------------------------
+
+(def ^:private name-pattern #"^[a-z][a-z0-9-]*$")
+
+(defn- cli-error [msg]
+  (throw (ex-info msg {:reason :cli})))
+
+(defn- validate-project-name! [name]
+  (when (nil? (re-matches name-pattern name))
+    (cli-error (str "invalid project name: " name
+                    " (start with a letter; lowercase letters, digits, and hyphens only)")))
+  name)
+
+(defn- validate-target! [target]
+  (let [stat (os/stat target)]
+    (cond
+      (nil? stat) target
+      (not (:dir? stat)) (cli-error (str "target exists and is not a directory: " target))
+      (seq (os/ls target)) (cli-error (str "target directory already exists and is not empty: " target))
+      :else target)))
+
+(defn- parse-cli-vars [var-str]
+  (if (str/blank? var-str)
+    {}
+    (prompt/parse-var-flags (str/split var-str ","))))
+
+(defn- resolve-project-name!
+  "Return the project name, or nil on an interactive cancel. The positional arg
+   wins; otherwise prompt (interactive) or fail (with --defaults)."
+  [positional defaults?]
+  (cond
+    (some? positional) (validate-project-name! positional)
+    defaults? (cli-error "a project name is required with --defaults (pass it as the positional argument)")
+    :else (prompt/ask-project-name!)))
+
+(defn- print-summary [n project-name target]
+  (println (str "Created " project-name " (" n
+                (if (= n 1) " file" " files") ") at " target))
+  (println)
+  (println "Next steps:")
+  (println (str "  cd " target)))
+
+(defn- run* [ctx]
+  (let [source-arg (get-in ctx [:args :source])
+        name-args (get-in ctx [:args :name-args])
+        opts (:opts ctx)
+        defaults? (boolean (:defaults? opts))
+        dir (:dir opts)]
+    (when (> (count name-args) 1)
+      (cli-error (str "unexpected extra arguments: " (str/join " " (rest name-args))
+                      " (options must come before <source>)")))
+    (let [cli-vars (parse-cli-vars (:var opts))
+          template-dir (source/resolve-source! source-arg)
+          cfg (config/read-config template-dir)
+          project-name (resolve-project-name! (first name-args) defaults?)]
+      (if (nil? project-name)
+        (os/exit 1) ;; cancelled at the name prompt
+        (let [target (if (str/blank? dir)
+                       (str (os/cwd) "/" project-name)
+                       dir)]
+          (validate-target! target)
+          (let [answers (if defaults?
+                          (prompt/resolve-answers cfg cli-vars {:defaults? true})
+                          (prompt/ask! cfg cli-vars {}))]
+            (if (nil? answers)
+              (os/exit 1) ;; cancelled at a var prompt
+              (let [final (prompt/compute-vars cfg (assoc answers "project-name" project-name))
+                    n (generate/generate! template-dir target final cfg)]
+                (print-summary n project-name target)))))))))
+
+(defn cmd-new!
+  "tiny-cli handler for `frame new`. Catches all errors and reports them
+   uniformly as `frame: <message>` (exit 1). tiny-cli does not catch handler
+   exceptions, so this must."
+  [ctx]
+  (try (run* ctx)
+       (catch e
+              (write! *err* (str "frame: " (ex-message e) "\n"))
+         (os/exit 1))))

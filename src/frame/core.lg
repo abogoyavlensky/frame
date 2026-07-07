@@ -1,7 +1,0 @@
-(ns frame.core)
-
-(defn greet
-  [_ctx]
-  (let [msg "Welcome to the frame app!"]
-    (println msg)
-    msg))

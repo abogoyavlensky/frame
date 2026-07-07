@@ -1,14 +1,30 @@
 (ns frame.main
-  (:require [frame.core :as c]
+  (:require [frame.new :as new]
             [tiny-cli.core :as cli]))
 
 (def app
   {:name "frame"
    :version "0.1.0"
-   :doc "An example command-line application."
-   :commands [{:name "greet"
-               :doc "Greet the user."
-               :run c/greet}]})
+   :doc "A declarative project templater."
+   :footer "Run 'frame new --help' for details. Options must come before <source>."
+   :commands [{:name "new"
+               :doc "Generate a project from a template."
+               :args [{:key :source
+                       :doc "Template source: a local directory or https://host/owner/repo."}]
+               :variadic {:key :name-args
+                          :doc "Project name (optional; prompted when omitted)."}
+               :opts [{:key :defaults?
+                       :long "defaults"
+                       :doc "Answer every remaining question with its default."}
+                      {:key :dir
+                       :long "dir"
+                       :value? true
+                       :doc "Exact output directory (default ./<project-name>)."}
+                      {:key :var
+                       :long "var"
+                       :value? true
+                       :doc "Preset vars: key=value[,key=value...] (skips their prompts)."}]
+               :run new/cmd-new!}]})
 
 (defn- main []
   (cli/run! app *command-line-args*))

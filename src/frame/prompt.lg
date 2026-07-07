@@ -145,6 +145,18 @@
                (when (= (:type res) :select)
                  (= (:item res) "Yes")))))
 
+(def ^:private project-name-pattern #"^[a-z][a-z0-9-]*$")
+
+(defn ask-project-name!
+  "Prompt for the project name in an inline session, enforcing the name pattern.
+   Returns the entered name, or nil on cancel."
+  []
+  (tui/with-inline-session
+    (tui/input {:title "Project name"
+                :validate (fn [t]
+                            (when (nil? (re-matches project-name-pattern t))
+                              "start with a letter; lowercase letters, digits, and hyphens only"))})))
+
 (defn- resolve-from-cli [config cli-vars]
   (reduce
     (fn [acc var]
