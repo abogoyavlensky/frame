@@ -115,6 +115,50 @@
       (os/sh "rm" "-rf" tpl))))
 
 ;; ---------------------------------------------------------------------------
+;; Path traversal is rejected (templates may be remote)
+;; ---------------------------------------------------------------------------
+
+(deftest path-escaping-target-is-rejected
+  (let [tpl (tmp-dir)
+        target (tmp-dir)]
+    (mkdir (str tpl "/template"))
+    (spit (str tpl "/frame.edn")
+          (pr-str {:vars [{:key :evil
+                           :prompt "e"
+                           :type :string
+                           :default ""}]}))
+    ;; a var that expands to a traversal path in a file name
+    (spit (str tpl "/template/{{ evil }}.txt") "x")
+    (let [cfg (config/read-config tpl)
+          r (threw #(generate/generate! tpl target {"evil" "../escape"} cfg))]
+      (is (= :unsafe-path (:reason (:data r))))
+      (is (not (file-exists? target)))
+      (os/sh "rm" "-rf" tpl))))
+
+;; ---------------------------------------------------------------------------
+;; File-vs-directory prefix collision detected before writing
+;; ---------------------------------------------------------------------------
+
+(deftest file-directory-prefix-collision-detected
+  ;; Two distinct source files whose RENDERED destinations conflict: `{{ leaf }}`
+  ;; renders to "foo" (a file) while "foo/bar" needs "foo" to be a directory.
+  (let [tpl (tmp-dir)
+        target (tmp-dir)]
+    (mkdir (str tpl "/template/foo"))
+    (spit (str tpl "/frame.edn")
+          (pr-str {:vars [{:key :leaf
+                           :prompt "l"
+                           :type :string
+                           :default "foo"}]}))
+    (spit (str tpl "/template/foo/bar") "B")
+    (spit (str tpl "/template/{{ leaf }}") "A")
+    (let [cfg (config/read-config tpl)
+          r (threw #(generate/generate! tpl target {"leaf" "foo"} cfg))]
+      (is (= :collision (:reason (:data r))))
+      (is (not (file-exists? target)))
+      (os/sh "rm" "-rf" tpl))))
+
+;; ---------------------------------------------------------------------------
 ;; Content render error reports file:line and writes nothing
 ;; ---------------------------------------------------------------------------
 

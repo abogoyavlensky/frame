@@ -58,6 +58,13 @@
   (or (some (fn [pat] (glob/matches? pat rel-src)) (:raw config))
       (binary? content)))
 
+(defn- unsafe-dst?
+  "A rendered destination escapes target when it is absolute or contains a
+   `..` segment (possible when a var expands to a path)."
+  [dst]
+  (or (str/starts-with? dst "/")
+      (some (fn [s] (= s "..")) (str/split dst "/"))))
+
 (defn- build-entries
   "Build {:dst :content :src} for every surviving file, all in memory. Render
    errors are re-thrown with a template-relative file:line prefix."
@@ -66,8 +73,17 @@
     (fn [acc abs]
       (let [rel-src (relative-to root abs)
             dst (render-path rel-src answers)]
-        (if (nil? dst)
+        (cond
+          (nil? dst)
           acc
+
+          (unsafe-dst? dst)
+          (throw (ex-info (str rel-src " renders to a path that escapes the target: " dst)
+                          {:reason :unsafe-path
+                           :src rel-src
+                           :dst dst}))
+
+          :else
           (let [content (slurp abs)
                 out (if (raw-file? config rel-src content)
                       content
@@ -92,13 +108,24 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- check-collisions! [entries]
+  ;; Two sources rendering to the same destination.
   (doseq [[dst es] (group-by :dst entries)]
     (when (> (count es) 1)
       (throw (ex-info (str "multiple template files render to " dst ": "
                            (str/join ", " (map :src es)))
                       {:reason :collision
                        :dst dst
-                       :sources (mapv :src es)})))))
+                       :sources (mapv :src es)}))))
+  ;; A file destination that is also a directory ancestor of another (e.g. a
+  ;; file `foo` and a file `foo/bar`); the write would otherwise fail midway.
+  (let [dsts (map :dst entries)]
+    (doseq [a dsts]
+      (doseq [b dsts]
+        (when (str/starts-with? b (str a "/"))
+          (throw (ex-info (str "path conflict: " a
+                               " is a file but also a directory prefix of " b)
+                          {:reason :collision
+                           :paths [a b]})))))))
 
 (defn- write-entries! [target entries]
   (mkdir target)
