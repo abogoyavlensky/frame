@@ -1,0 +1,85 @@
+(ns frame.prompt-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.prompt :as prompt]))
+
+(defn- threw [f]
+  (try (f) :no-throw (catch e (ex-data e))))
+
+(def ^:private cfg
+  {:vars [{:key :db
+           :prompt "Database"
+           :type :enum
+           :options ["sqlite" "postgres"]
+           :default "sqlite"}
+          {:key :auth
+           :prompt "Include auth?"
+           :type :boolean
+           :default true}
+          {:key :author
+           :prompt "Author"
+           :type :string
+           :default ""}]
+   :computed {:top-ns "{{ project-name | snake_case }}"}
+   :raw []})
+
+;; ---------------------------------------------------------------------------
+;; parse-var-flags
+;; ---------------------------------------------------------------------------
+
+(deftest parses-var-flags
+  (is (= {"db" "postgres"
+          "auth" "false"}
+         (prompt/parse-var-flags ["db=postgres" "auth=false"]))))
+
+(deftest var-flag-value-may-contain-equals
+  (is (= {"url" "a=b=c"}
+         (prompt/parse-var-flags ["url=a=b=c"]))))
+
+(deftest malformed-var-flag-throws
+  (is (= :var (:reason (threw #(prompt/parse-var-flags ["nokey"])))))
+  (is (= :var (:reason (threw #(prompt/parse-var-flags ["=noval"]))))))
+
+(deftest project-name-var-flag-rejected
+  (is (= :var (:reason (threw #(prompt/parse-var-flags ["project-name=x"]))))))
+
+;; ---------------------------------------------------------------------------
+;; resolve-answers (defaults mode)
+;; ---------------------------------------------------------------------------
+
+(deftest resolves-defaults-with-string-keys
+  (is (= {"db" "sqlite"
+          "auth" true
+          "author" ""}
+         (prompt/resolve-answers cfg {} {:defaults? true}))))
+
+(deftest cli-overrides-win-and-coerce-booleans
+  (is (= {"db" "postgres"
+          "auth" false
+          "author" ""}
+         (prompt/resolve-answers cfg {"db" "postgres"
+                                      "auth" "false"} {:defaults? true}))))
+
+(deftest enum-value-validated-against-options
+  (is (= :var (:reason (threw #(prompt/resolve-answers cfg {"db" "mysql"} {:defaults? true}))))))
+
+(deftest unknown-var-key-errors
+  (is (= :var (:reason (threw #(prompt/resolve-answers cfg {"nope" "x"} {:defaults? true}))))))
+
+(deftest boolean-cli-true
+  (is (= true (get (prompt/resolve-answers cfg {"auth" "true"} {:defaults? true}) "auth"))))
+
+;; ---------------------------------------------------------------------------
+;; compute-vars
+;; ---------------------------------------------------------------------------
+
+(deftest computes-vars-into-answers
+  (is (= {"project-name" "my-app"
+          "top-ns" "my_app"}
+         (prompt/compute-vars cfg {"project-name" "my-app"}))))
+
+(deftest computed-referencing-another-computed-errors
+  ;; Single pass: a computed var cannot see another computed var.
+  (let [c {:computed {:top-ns "{{ project-name | snake_case }}"
+                      :derived "{{ top-ns }}"}}
+        data (threw #(prompt/compute-vars c {"project-name" "my-app"}))]
+    (is (= :unresolved-var (:reason data)))))

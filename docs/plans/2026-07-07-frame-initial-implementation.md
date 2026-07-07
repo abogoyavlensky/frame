@@ -322,22 +322,23 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 - Create: `src/frame/prompt.lg`
 - Test: `test/frame/prompt_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Test the pure parts:
   - `(parse-var-flags ["db=postgres" "auth=false"])` → `{"db" "postgres", "auth" "false"}`; malformed (no `=`) → `ex-info`; `project-name=...` → `ex-info` (name comes only from the positional arg or its prompt).
   - `(resolve-answers config cli-vars opts)` with `:defaults? true`: returns full answers map keyed by var key **as string keys matching template identifiers** (e.g. `"db"`), booleans coerced (`"false"` → `false` for `:boolean` vars), enum value validated against `:options`, unknown `--var` key → error.
   - `(compute-vars config answers)` renders each `:computed` template via `render-string` and merges; a computed var referencing another computed var → the underlying unresolved-var error propagates.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test test/frame/prompt_test.lg` — Expected: FAIL.
 
-- [ ] **Step 3: Implement pure parts + interactive flow**
+- [x] **Step 3: Implement pure parts + interactive flow**
   Pure fns as tested. Then `(ask! config cli-vars opts)`: inside `tui/with-inline-session`, iterate `:vars` in order, skipping pre-answered keys; `:string` → `tui/input` (`:value` default, `:validate` from pattern via `re-matches`), `:enum` → `tui/select` (`:cursor-item` default), `:boolean` → `tui/confirm`; any cancel returns `nil` (caller aborts). `--defaults` bypasses the session entirely. Interactive path is not unit-tested (manual smoke in Task 11).
+  > Deviation: `tui/confirm` returns a bare boolean with no cancel signal, so esc on a boolean prompt reads as "no" rather than aborting (documented in `prompt-var`). `ask!`'s `opts` is currently unused (renamed `_opts`); `--defaults` is routed to `resolve-answers` by the caller, not `ask!`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test test/frame/prompt_test.lg` — Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: answer resolution with defaults, --var overrides, and tui prompts"`
 
 ### Task 9: Source resolution — local path and git cache

@@ -1,0 +1,161 @@
+(ns frame.prompt
+  (:require [frame.template.render :as render]
+            [string :as str]
+            [tiny-tui.core :as tui]))
+
+;; ---------------------------------------------------------------------------
+;; Answer collection.
+;;
+;; Answers are a map keyed by var-name STRINGS (matching template identifiers),
+;; with string or boolean values. `project-name` is supplied separately by the
+;; caller and merged in before rendering.
+;; ---------------------------------------------------------------------------
+
+(defn- var-error [msg data]
+  (throw (ex-info msg (assoc data :reason :var))))
+
+;; ---------------------------------------------------------------------------
+;; --var flag parsing
+;; ---------------------------------------------------------------------------
+
+(defn parse-var-flags
+  "Parse [\"key=value\" ...] into {\"key\" \"value\"}. Splits on the first `=`
+   (values may contain more). Malformed entries and `project-name=...` throw
+   ex-info {:reason :var}."
+  [flags]
+  (reduce
+    (fn [acc flag]
+      (let [i (str/index-of flag "=")]
+        (when (nil? i)
+          (var-error (str "invalid --var (expected key=value): " flag) {:flag flag}))
+        (let [k (subs flag 0 i)
+              v (subs flag (inc i))]
+          (when (str/blank? k)
+            (var-error (str "invalid --var (empty key): " flag) {:flag flag}))
+          (when (= k "project-name")
+            (var-error "project-name cannot be set with --var; pass it as the positional name argument"
+                       {:key k}))
+          (assoc acc k v))))
+    {}
+    flags))
+
+;; ---------------------------------------------------------------------------
+;; Coercion / validation of a single answer
+;; ---------------------------------------------------------------------------
+
+(defn- coerce-boolean [var raw]
+  (cond
+    (= raw true) true
+    (= raw false) false
+    (= raw "true") true
+    (= raw "false") false
+    (nil? raw) false
+    :else (var-error (str "var " (:key var) " expects true or false, got " (pr-str raw))
+                     {:key (:key var)})))
+
+(defn- validate-enum [var raw]
+  (let [v (when-not (nil? raw) (str raw))
+        opts (:options var)]
+    (when-not (contains? (set opts) v)
+      (var-error (str "var " (:key var) " must be one of " (pr-str opts) ", got " (pr-str v))
+                 {:key (:key var)}))
+    v))
+
+(defn- coerce-answer [var raw]
+  (case (:type var)
+    :boolean (coerce-boolean var raw)
+    :enum (validate-enum var raw)
+    :string (if (nil? raw) "" (str raw))))
+
+(defn- check-unknown-keys! [config cli-vars]
+  (let [known (set (map (fn [v] (name (:key v))) (:vars config)))]
+    (doseq [k (keys cli-vars)]
+      (when-not (contains? known k)
+        (var-error (str "unknown --var key: " k) {:key k})))))
+
+;; ---------------------------------------------------------------------------
+;; Non-interactive resolution (--defaults)
+;; ---------------------------------------------------------------------------
+
+(defn resolve-answers
+  "Resolve answers without prompting: each var takes its --var override, else
+   its default (when opts :defaults?). Returns a string-keyed, coerced/validated
+   answers map. Unknown --var keys and invalid values throw ex-info
+   {:reason :var}."
+  [config cli-vars opts]
+  (check-unknown-keys! config cli-vars)
+  (reduce
+    (fn [acc var]
+      (let [skey (name (:key var))]
+        (cond
+          (contains? cli-vars skey)
+          (assoc acc skey (coerce-answer var (get cli-vars skey)))
+
+          (:defaults? opts)
+          (assoc acc skey (coerce-answer var (:default var)))
+
+          :else acc)))
+    {}
+    (:vars config)))
+
+;; ---------------------------------------------------------------------------
+;; Computed vars (single pass; rendered against the collected answers)
+;; ---------------------------------------------------------------------------
+
+(defn compute-vars
+  "Render each :computed template against `answers` and merge the results in
+   (string-keyed). Rendering against the original answers means a computed var
+   cannot reference another computed var; doing so raises an unresolved-var
+   error from the renderer."
+  [config answers]
+  (reduce
+    (fn [acc [k tmpl]]
+      (assoc acc (name k) (render/render-string tmpl answers)))
+    answers
+    (:computed config)))
+
+;; ---------------------------------------------------------------------------
+;; Interactive prompting (not unit-tested; manual smoke in Task 11)
+;; ---------------------------------------------------------------------------
+
+(defn- string-validate-fn [var]
+  (let [v (:validate var)]
+    (when (and v (:pattern v))
+      (let [re (re-pattern (:pattern v))
+            msg (or (:msg v) "invalid value")]
+        (fn [text] (when (nil? (re-matches re text)) msg))))))
+
+(defn- prompt-var
+  "Prompt for one var. Returns the (coerced) answer, or nil on cancel. Booleans
+   use tui/confirm, which cannot signal cancel, so esc reads as \"no\"."
+  [var]
+  (case (:type var)
+    :string (tui/input {:title (:prompt var)
+                        :value (or (:default var) "")
+                        :validate (string-validate-fn var)})
+    :enum (let [res (tui/select {:title (:prompt var)
+                                 :items (:options var)
+                                 :cursor-item (:default var)})]
+            (when (= (:type res) :select)
+              (:item res)))
+    :boolean (tui/confirm {:title (:prompt var)})))
+
+(defn ask!
+  "Collect answers interactively inside one inline tui session. Vars already
+   answered by --var are coerced and skipped. Returns the string-keyed answers
+   map, or nil if the user cancels a prompt."
+  [config cli-vars _opts]
+  (check-unknown-keys! config cli-vars)
+  (tui/with-inline-session
+    (loop [vars (:vars config)
+           answers {}]
+      (if (empty? vars)
+        answers
+        (let [var (first vars)
+              skey (name (:key var))]
+          (if (contains? cli-vars skey)
+            (recur (rest vars) (assoc answers skey (coerce-answer var (get cli-vars skey))))
+            (let [ans (prompt-var var)]
+              (if (nil? ans)
+                nil
+                (recur (rest vars) (assoc answers skey ans))))))))))
