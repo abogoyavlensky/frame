@@ -1,0 +1,129 @@
+(ns frame.source
+  (:require [string :as str]))
+
+;; ---------------------------------------------------------------------------
+;; Template source resolution.
+;;
+;; A source is either:
+;;   - an https://host/owner/repo[.git] git URL -> shallow-cloned and cached
+;;     under $FRAME_HOME/templates/<host>/<owner>/<repo>/<sha>/ (FRAME_HOME
+;;     defaults to ~/.frame), reused when already present; or
+;;   - any other path -> a local directory, used in place (absolutized).
+;; Non-https URL schemes (ssh://, git://, git@host:owner/repo) are rejected.
+;; ---------------------------------------------------------------------------
+
+(defn- source-error [msg data]
+  (throw (ex-info msg (assoc data :reason :source))))
+
+(defn- frame-home []
+  (let [override (os/getenv "FRAME_HOME")]
+    (if (str/blank? override)
+      (str (os/getenv "HOME") "/.frame")
+      override)))
+
+(defn- unsupported-url [s]
+  (source-error (str "unsupported source URL: " s
+                     " (only https://host/owner/repo is supported)")
+                {:url s}))
+
+(defn git-url?
+  "True when s is an https git URL, false when it is a local path. Rejects any
+   other URL scheme (ssh://, git://, git@host:owner/repo) with ex-info."
+  [s]
+  (cond
+    (str/starts-with? s "https://") true
+    (str/includes? s "://") (unsupported-url s)
+    ;; scp-like shorthand: user@host:path
+    (some? (re-matches #"^[^/@]+@[^/:]+:.*$" s)) (unsupported-url s)
+    :else false))
+
+(defn parse-git-url
+  "Parse https://host/owner/repo[.git] into [host owner repo]. Throws ex-info
+   {:reason :source} on any other shape."
+  [url]
+  (let [stripped (if (str/ends-with? url ".git")
+                   (subs url 0 (- (count url) 4))
+                   url)
+        m (re-find #"^https?://([^/]+)/([^/]+)/([^/]+)$" stripped)]
+    (when (nil? m)
+      (source-error (str "unsupported git url: " url
+                         " (expected https://host/owner/repo)")
+                    {:url url}))
+    (rest m)))
+
+;; ---------------------------------------------------------------------------
+;; git wrappers
+;; ---------------------------------------------------------------------------
+
+(defn- git! [args fail-msg]
+  (let [r (apply os/sh "git" args)]
+    (when-not (zero? (:exit r))
+      (source-error (str fail-msg ": " (:err r))
+                    {:exit (:exit r)
+                     :stderr (:err r)}))
+    r))
+
+(defn- resolve-head-sha! [url]
+  (let [r (git! ["ls-remote" url "HEAD"] (str "git ls-remote failed: " url))
+        sha (first (str/split (str/trim (:out r)) #"\s+"))]
+    (when (str/blank? sha)
+      (source-error (str "no HEAD found at " url) {:url url}))
+    sha))
+
+;; ---------------------------------------------------------------------------
+;; Cache layout + clone
+;; ---------------------------------------------------------------------------
+
+(defn- parent-dir [p]
+  (let [i (str/last-index-of p "/")]
+    (if (nil? i) "." (subs p 0 i))))
+
+(defn- template-dir [url sha]
+  (let [[host owner repo] (parse-git-url url)]
+    (str (frame-home) "/templates/" host "/" owner "/" repo "/" sha)))
+
+(defn- clone-sha!
+  "Shallow-clone url into dest via a tmp sibling, then finalize atomically.
+   The depth-1 clone's worktree is the default-branch HEAD, i.e. sha."
+  [url dest]
+  (let [tmp (str dest ".tmp." (rand-int 1000000))]
+    (mkdir (parent-dir dest))
+    (git! ["clone" "--quiet" "--depth" "1" url tmp]
+          (str "git clone failed: " url))
+    (let [r (os/sh "rm" "-rf" (str tmp "/.git"))]
+      (when-not (zero? (:exit r))
+        (source-error "failed to remove .git from clone" {:stderr (:err r)})))
+    (let [r (os/sh "mv" tmp dest)]
+      (when-not (zero? (:exit r))
+        (source-error "failed to finalize clone" {:stderr (:err r)})))))
+
+;; ---------------------------------------------------------------------------
+;; Local path handling
+;; ---------------------------------------------------------------------------
+
+(defn- absolutize [p]
+  (cond
+    (str/starts-with? p "/") p
+    (= p ".") (os/cwd)
+    (str/starts-with? p "./") (str (os/cwd) "/" (subs p 2))
+    :else (str (os/cwd) "/" p)))
+
+;; ---------------------------------------------------------------------------
+;; Public entry
+;; ---------------------------------------------------------------------------
+
+(defn resolve-source!
+  "Resolve a source to a local template-repo directory. A git URL is cloned and
+   cached (reused when present); a local path is absolutized and must exist.
+   Throws ex-info {:reason :source} on failure."
+  [s]
+  (if (git-url? s)
+    (let [sha (resolve-head-sha! s)
+          dir (template-dir s sha)]
+      (when-not (file-exists? dir)
+        (clone-sha! s dir))
+      dir)
+    (let [abs (absolutize s)]
+      (when-not (file-exists? abs)
+        (source-error (str "template source not found: " s) {:path s}))
+      abs)))

@@ -347,20 +347,22 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 - Create: `src/frame/source.lg`
 - Test: `test/frame/source_test.lg` (local-path behavior only)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   `(resolve-source! s)`: a local dir path returns it absolutized; missing path → `ex-info`; classification fn `(git-url? s)` tested purely (not the network): `https://...` → git, plain paths → local; unsupported schemes (`ssh://`, `git://`, `git@host:owner/repo`) → `ex-info` naming the supported `https://host/owner/repo` form.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test test/frame/source_test.lg` — Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Mirror lgx `cache.lg`/`new.lg` (read them: `/Users/andrew/Projects/lgx/lgx/cache.lg`, `new.lg`): `git ls-remote <url> HEAD` for the sha, `git clone --depth 1` + `git checkout <sha>` into `$FRAME_HOME/templates/<host>/<owner>/<repo>/<sha>` (`FRAME_HOME` default `~/.frame`), reuse when the dir exists. Errors carry `:stderr` in `ex-data`. `parse-git-url` handles `https://host/owner/repo` (strip trailing `.git`).
+  > Deviation: shallow `--depth 1` clone's worktree IS the resolved default-branch HEAD, so no explicit `git checkout <sha>` is needed; `.git` is stripped and the worktree moved into place atomically.
 
-- [ ] **Step 4: Run tests + manual git check**
+- [x] **Step 4: Run tests + manual git check**
   Run: `lgx test test/frame/source_test.lg` — Expected: PASS.
   Manual: `lgx run -e '(...)'` resolving a real small repo URL once, confirm cache dir appears.
+  > Verified: cloned tiny-tui into `$FRAME_HOME/templates/github.com/abogoyavlensky/tiny-tui/<sha>/`; second run reused the cache.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: template source resolution with git cache"`
 
 ### Task 10: Generator — walk, render, write

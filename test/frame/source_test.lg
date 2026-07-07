@@ -1,0 +1,58 @@
+(ns frame.source-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.source :as source]))
+
+(defn- threw [f]
+  (try (f) :no-throw (catch e (ex-data e))))
+
+;; ---------------------------------------------------------------------------
+;; git-url? classification (pure, no network)
+;; ---------------------------------------------------------------------------
+
+(deftest https-urls-are-git
+  (is (= true (source/git-url? "https://github.com/owner/repo")))
+  (is (= true (source/git-url? "https://github.com/owner/repo.git"))))
+
+(deftest local-paths-are-not-git
+  (is (= false (source/git-url? "some/local/path")))
+  (is (= false (source/git-url? "./rel")))
+  (is (= false (source/git-url? "/abs/path")))
+  (is (= false (source/git-url? "template-dir"))))
+
+(deftest unsupported-schemes-throw
+  (is (= :source (:reason (threw #(source/git-url? "ssh://git@host/o/r")))))
+  (is (= :source (:reason (threw #(source/git-url? "git://host/o/r")))))
+  (is (= :source (:reason (threw #(source/git-url? "git@github.com:o/r"))))))
+
+;; ---------------------------------------------------------------------------
+;; parse-git-url (pure)
+;; ---------------------------------------------------------------------------
+
+(deftest parses-https-url-parts
+  (is (= ["github.com" "owner" "repo"]
+         (vec (source/parse-git-url "https://github.com/owner/repo"))))
+  (is (= ["github.com" "owner" "repo"]
+         (vec (source/parse-git-url "https://github.com/owner/repo.git")))))
+
+(deftest parse-git-url-rejects-malformed
+  (is (= :source (:reason (threw #(source/parse-git-url "https://github.com/owner"))))))
+
+;; ---------------------------------------------------------------------------
+;; resolve-source! local paths
+;; ---------------------------------------------------------------------------
+
+(deftest resolve-existing-local-dir-absolutized
+  (let [dir (str (os/temp-dir) "/frame-source-test-" (rand-int 100000000))]
+    (mkdir dir)
+    (let [r (source/resolve-source! dir)]
+      (os/sh "rm" "-rf" dir)
+      ;; absolute path pointing at the same dir
+      (is (= dir r)))))
+
+(deftest resolve-relative-local-dir-becomes-absolute
+  ;; A relative path is joined onto cwd.
+  (let [r (source/resolve-source! ".")]
+    (is (= (os/cwd) r))))
+
+(deftest resolve-missing-path-throws
+  (is (= :source (:reason (threw #(source/resolve-source! "/no/such/frame/template/xyz"))))))
