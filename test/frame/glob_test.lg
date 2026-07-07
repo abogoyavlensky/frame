@@ -1,0 +1,34 @@
+(ns frame.glob-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.glob :as glob]))
+
+(deftest star-matches-within-a-single-segment
+  (is (glob/matches? "*.png" "a.png"))
+  (is (glob/matches? "*.png" "image.png"))
+  (is (not (glob/matches? "*.png" "a.jpg")))
+  ;; * does not cross a / boundary
+  (is (not (glob/matches? "*.png" "d/a.png"))))
+
+(deftest globstar-matches-across-segments
+  (is (glob/matches? "**/*.png" "a.png"))
+  (is (glob/matches? "**/*.png" "d/a.png"))
+  (is (glob/matches? "**/*.png" "d/e/a.png"))
+  (is (not (glob/matches? "**/*.png" "d/e/a.jpg"))))
+
+(deftest trailing-globstar-matches-everything-under-dir
+  (is (glob/matches? "assets/**" "assets/logo.png"))
+  (is (glob/matches? "assets/**" "assets/img/logo.png"))
+  (is (not (glob/matches? "assets/**" "src/logo.png"))))
+
+(deftest literal-segments
+  (is (glob/matches? "src/core.clj" "src/core.clj"))
+  (is (not (glob/matches? "src/core.clj" "src/other.clj")))
+  (is (not (glob/matches? "src/core.clj" "src/core.clj/extra"))))
+
+(deftest question-mark-is-literal-not-wildcard
+  (is (glob/matches? "a?.png" "a?.png"))
+  (is (not (glob/matches? "a?.png" "ab.png"))))
+
+(deftest star-matches-empty-run
+  (is (glob/matches? "a*b" "ab"))
+  (is (glob/matches? "a*b" "axyzb")))

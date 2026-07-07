@@ -278,19 +278,20 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 - Create: `src/frame/glob.lg`
 - Test: `test/frame/glob_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   `(matches? pattern rel-path)`: `*.png` matches `a.png` not `d/a.png`; `**/*.png` matches both `a.png` and `d/e/a.png`; `assets/**` matches everything under `assets/`; literal segments; `?` not supported (literal). Paths always `/`-separated.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test test/frame/glob_test.lg` — Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Split pattern and path on `/`; recursive segment matcher where `**` matches zero or more segments; within a segment, `*` matches any run of non-`/` chars (convert segment to regex via `re-pattern` with quoting, or hand-rolled — either is fine, pick one and test it).
+  > Deviation: hand-rolled a two-pointer wildcard matcher (avoids RE2 escaping of arbitrary segment chars).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test test/frame/glob_test.lg` — Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: glob matcher for raw file patterns"`
 
 ### Task 7: Config — frame.edn

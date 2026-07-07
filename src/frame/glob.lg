@@ -1,0 +1,67 @@
+(ns frame.glob
+  (:require [string :as str]))
+
+;; ---------------------------------------------------------------------------
+;; Minimal glob matcher for :raw patterns.
+;;
+;; Patterns and paths are always `/`-separated. Two special forms:
+;;   *   within a segment, matches any run of non-`/` characters (incl. empty).
+;;   **  a whole segment, matches zero or more path segments (globstar).
+;; Every other character is literal (`?` is NOT a wildcard).
+;; ---------------------------------------------------------------------------
+
+(defn- segment-match?
+  "Match a single path segment against a segment pattern where `*` matches any
+   run of characters. Classic two-pointer wildcard match with backtracking."
+  [pat s]
+  (let [pv (vec (seq pat))
+        sv (vec (seq s))
+        np (count pv)
+        ns (count sv)]
+    (loop [pi 0
+           si 0
+           star-pi -1  ;; pattern index of the last `*` seen
+           match-si 0] ;; s index recorded when that `*` was seen
+      (if (< si ns)
+        (cond
+          ;; literal char match
+          (and (< pi np) (not= (nth pv pi) \*) (= (nth pv pi) (nth sv si)))
+          (recur (inc pi) (inc si) star-pi match-si)
+
+          ;; `*` in pattern: record a backtrack point, consume no input yet
+          (and (< pi np) (= (nth pv pi) \*))
+          (recur (inc pi) si pi si)
+
+          ;; mismatch: backtrack to the last `*`, letting it swallow one more char
+          (not= star-pi -1)
+          (recur (inc star-pi) (inc match-si) star-pi (inc match-si))
+
+          :else false)
+        ;; consumed all of s: the rest of the pattern must be only `*`
+        (loop [k pi]
+          (cond
+            (>= k np) true
+            (= (nth pv k) \*) (recur (inc k))
+            :else false))))))
+
+(defn- match-segments [pat-segs path-segs]
+  (cond
+    (empty? pat-segs) (empty? path-segs)
+
+    (= (first pat-segs) "**")
+    (or
+      ;; ** consumes zero segments
+      (match-segments (rest pat-segs) path-segs)
+      ;; ** consumes one segment and stays
+      (and (seq path-segs)
+           (match-segments pat-segs (rest path-segs))))
+
+    :else
+    (and (seq path-segs)
+         (segment-match? (first pat-segs) (first path-segs))
+         (match-segments (rest pat-segs) (rest path-segs)))))
+
+(defn matches?
+  "True when the `/`-separated rel-path matches the glob pattern."
+  [pattern rel-path]
+  (match-segments (str/split pattern "/") (str/split rel-path "/")))
