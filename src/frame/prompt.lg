@@ -127,7 +127,8 @@
 
 (defn- prompt-var
   "Prompt for one var. Returns the (coerced) answer, or nil on cancel. Booleans
-   use tui/confirm, which cannot signal cancel, so esc reads as \"no\"."
+   use a two-item select (rather than tui/confirm) so the configured default is
+   honored via :cursor-item and cancel is distinguishable from \"no\"."
   [var]
   (case (:type var)
     :string (tui/input {:title (:prompt var)
@@ -138,24 +139,41 @@
                                  :cursor-item (:default var)})]
             (when (= (:type res) :select)
               (:item res)))
-    :boolean (tui/confirm {:title (:prompt var)})))
+    :boolean (let [res (tui/select {:title (:prompt var)
+                                    :items ["Yes" "No"]
+                                    :cursor-item (if (:default var) "Yes" "No")})]
+               (when (= (:type res) :select)
+                 (= (:item res) "Yes")))))
+
+(defn- resolve-from-cli [config cli-vars]
+  (reduce
+    (fn [acc var]
+      (let [skey (name (:key var))]
+        (assoc acc skey (coerce-answer var (get cli-vars skey)))))
+    {}
+    (:vars config)))
 
 (defn ask!
   "Collect answers interactively inside one inline tui session. Vars already
-   answered by --var are coerced and skipped. Returns the string-keyed answers
-   map, or nil if the user cancels a prompt."
+   answered by --var are coerced and skipped. When every var is pre-answered
+   (or there are none) no session is opened, so fully-specified runs work
+   headlessly. Returns the string-keyed answers map, or nil if the user cancels
+   a prompt."
   [config cli-vars _opts]
   (check-unknown-keys! config cli-vars)
-  (tui/with-inline-session
-    (loop [vars (:vars config)
-           answers {}]
-      (if (empty? vars)
-        answers
-        (let [var (first vars)
-              skey (name (:key var))]
-          (if (contains? cli-vars skey)
-            (recur (rest vars) (assoc answers skey (coerce-answer var (get cli-vars skey))))
-            (let [ans (prompt-var var)]
-              (if (nil? ans)
-                nil
-                (recur (rest vars) (assoc answers skey ans))))))))))
+  (let [needs-prompt? (fn [v] (not (contains? cli-vars (name (:key v)))))]
+    (if-not (some needs-prompt? (:vars config))
+      (resolve-from-cli config cli-vars)
+      (tui/with-inline-session
+        (loop [vars (:vars config)
+               answers {}]
+          (if (empty? vars)
+            answers
+            (let [var (first vars)
+                  skey (name (:key var))]
+              (if (contains? cli-vars skey)
+                (recur (rest vars) (assoc answers skey (coerce-answer var (get cli-vars skey))))
+                (let [ans (prompt-var var)]
+                  (if (nil? ans)
+                    nil
+                    (recur (rest vars) (assoc answers skey ans))))))))))))

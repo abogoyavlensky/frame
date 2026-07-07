@@ -69,6 +69,22 @@
   (is (= true (get (prompt/resolve-answers cfg {"auth" "true"} {:defaults? true}) "auth"))))
 
 ;; ---------------------------------------------------------------------------
+;; ask! headless path (no TTY when everything is pre-answered)
+;; ---------------------------------------------------------------------------
+
+(deftest ask-headless-when-fully-preanswered
+  ;; Every var supplied via --var: ask! resolves without opening a tui session.
+  (is (= {"db" "postgres"
+          "auth" false
+          "author" "me"}
+         (prompt/ask! cfg {"db" "postgres"
+                           "auth" "false"
+                           "author" "me"} {}))))
+
+(deftest ask-headless-when-no-vars
+  (is (= {} (prompt/ask! {:vars []} {} {}))))
+
+;; ---------------------------------------------------------------------------
 ;; compute-vars
 ;; ---------------------------------------------------------------------------
 
