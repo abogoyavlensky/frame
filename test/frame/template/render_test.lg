@@ -1,0 +1,144 @@
+(ns frame.template.render-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.template.render :as r]))
+
+(defn- render-error [f]
+  (try (f) :no-throw (catch e (ex-data e))))
+
+;; ---------------------------------------------------------------------------
+;; Output substitution and filters
+;; ---------------------------------------------------------------------------
+
+(deftest substitution
+  (is (= "hello my-app!"
+         (r/render-string "hello {{ name }}!" {"name" "my-app"}))))
+
+(deftest chained-filters
+  (is (= "MY_APP"
+         (r/render-string "{{ name | snake_case | upper }}" {"name" "my-app"}))))
+
+(deftest output-of-boolean-and-empty
+  (is (= "false" (r/render-string "{{ x }}" {"x" false})))
+  (is (= "" (r/render-string "{{ x }}" {"x" ""}))))
+
+(deftest unresolved-output-var-throws
+  (let [data (render-error #(r/render-string "a\n{{ missing }}" {}))]
+    (is (= :unresolved-var (:reason data)))
+    (is (= 2 (:line data)))))
+
+;; ---------------------------------------------------------------------------
+;; Conditionals: truthiness, selection, not, ==, and/or
+;; ---------------------------------------------------------------------------
+
+(deftest if-elsif-else-selection
+  (let [t "{% if a %}A{% elsif b %}B{% else %}C{% endif %}"]
+    (is (= "A" (r/render-string t {"a" true
+                                   "b" true})))
+    (is (= "B" (r/render-string t {"a" false
+                                   "b" true})))
+    (is (= "C" (r/render-string t {"a" false
+                                   "b" false})))))
+
+(deftest truthiness-of-false-empty-and-missing
+  (is (= "" (r/render-string "{% if x %}Y{% endif %}" {"x" false})))
+  (is (= "" (r/render-string "{% if x %}Y{% endif %}" {"x" ""})))
+  (is (= "" (r/render-string "{% if x %}Y{% endif %}" {})))
+  (is (= "Y" (r/render-string "{% if x %}Y{% endif %}" {"x" "v"})))
+  (is (= "Y" (r/render-string "{% if x %}Y{% endif %}" {"x" true}))))
+
+(deftest not-operator
+  (is (= "Y" (r/render-string "{% if not x %}Y{% endif %}" {"x" false})))
+  (is (= "" (r/render-string "{% if not x %}Y{% endif %}" {"x" true}))))
+
+(deftest equality-bare-and-quoted
+  (is (= "Y" (r/render-string "{% if db == postgres %}Y{% endif %}" {"db" "postgres"})))
+  (is (= "" (r/render-string "{% if db == postgres %}Y{% endif %}" {"db" "sqlite"})))
+  (is (= "Y" (r/render-string "{% if db == \"postgres\" %}Y{% endif %}" {"db" "postgres"})))
+  (is (= "Y" (r/render-string "{% if db != postgres %}Y{% endif %}" {"db" "sqlite"}))))
+
+(deftest boolean-equality-against-literal
+  ;; auth == false is true when the boolean var is false (stringified compare).
+  (is (= "Y" (r/render-string "{% if auth == false %}Y{% endif %}" {"auth" false})))
+  (is (= "" (r/render-string "{% if auth == false %}Y{% endif %}" {"auth" true}))))
+
+(deftest unresolved-identifier-in-comparison-is-bare-literal
+  ;; Both sides unresolved: compared as their literal strings.
+  (is (= "Y" (r/render-string "{% if foo == foo %}Y{% endif %}" {})))
+  (is (= "" (r/render-string "{% if foo == bar %}Y{% endif %}" {}))))
+
+(deftest and-or-precedence
+  (let [t "{% if a or b and c %}Y{% endif %}"]
+    (is (= "Y" (r/render-string t {"a" true
+                                   "b" false
+                                   "c" false})))
+    (is (= "Y" (r/render-string t {"a" false
+                                   "b" true
+                                   "c" true})))
+    (is (= "" (r/render-string t {"a" false
+                                  "b" true
+                                  "c" false})))))
+
+;; ---------------------------------------------------------------------------
+;; Case blocks
+;; ---------------------------------------------------------------------------
+
+(deftest case-when-else
+  (let [t "{% case db %}{% when sqlite %}S{% when postgres %}P{% else %}D{% endcase %}"]
+    (is (= "S" (r/render-string t {"db" "sqlite"})))
+    (is (= "P" (r/render-string t {"db" "postgres"})))
+    (is (= "D" (r/render-string t {"db" "mysql"})))))
+
+(deftest case-no-match-no-else-is-empty
+  (is (= "" (r/render-string "{% case db %}{% when sqlite %}S{% endcase %}"
+                             {"db" "mysql"}))))
+
+;; ---------------------------------------------------------------------------
+;; Whitespace goldens (byte-exact)
+;; ---------------------------------------------------------------------------
+
+(deftest false-branch-leaves-zero-trace
+  (let [t "line1\n{% if show %}\nkept\n{% endif %}\nline2\n"]
+    (is (= "line1\nkept\nline2\n" (r/render-string t {"show" true})))
+    (is (= "line1\nline2\n" (r/render-string t {"show" false})))))
+
+(deftest taken-branch-preserves-indentation
+  (let [t "{% if x %}\n    indented\n    body\n{% endif %}\n"]
+    (is (= "    indented\n    body\n" (r/render-string t {"x" true})))
+    (is (= "" (r/render-string t {"x" false})))))
+
+(deftest inline-if-within-a-line
+  (is (= "abc" (r/render-string "a{% if x %}b{% endif %}c" {"x" true})))
+  (is (= "ac" (r/render-string "a{% if x %}b{% endif %}c" {"x" false}))))
+
+(deftest nested-if-inside-case
+  (let [t (str "{% case env %}\n"
+               "{% when prod %}\n"
+               "prod-{% if verbose %}v{% endif %}line\n"
+               "{% else %}\n"
+               "dev\n"
+               "{% endcase %}\n")]
+    (is (= "prod-vline\n" (r/render-string t {"env" "prod"
+                                              "verbose" true})))
+    (is (= "prod-line\n" (r/render-string t {"env" "prod"
+                                             "verbose" false})))
+    (is (= "dev\n" (r/render-string t {"env" "dev"
+                                       "verbose" false})))))
+
+;; ---------------------------------------------------------------------------
+;; render-segment (inline / path mode)
+;; ---------------------------------------------------------------------------
+
+(deftest segment-substitution-and-filters
+  (is (= "src/my_app/core.clj"
+         (r/render-segment "src/{{ project-name | snake_case }}/core.clj"
+                           {"project-name" "my-app"}))))
+
+(deftest segment-false-condition-is-empty
+  (is (= "" (r/render-segment "{% if auth %}auth{% endif %}" {"auth" false})))
+  (is (= "auth" (r/render-segment "{% if auth %}auth{% endif %}" {"auth" true}))))
+
+(deftest segment-bare-equality
+  (is (= "migrations"
+         (r/render-segment "{% if db == sqlite %}migrations{% endif %}" {"db" "sqlite"})))
+  (is (= ""
+         (r/render-segment "{% if db == sqlite %}migrations{% endif %}" {"db" "postgres"}))))

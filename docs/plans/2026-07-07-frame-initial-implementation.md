@@ -249,7 +249,7 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 - Create: `src/frame/template/render.lg`
 - Test: `test/frame/template/render_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Public entry `(render-string template vars)` (string in, string out, composing lexer+parser internally) plus `(render-segment segment vars)` for paths. Cases:
   - substitution and chained filters;
   - unresolved var in output → `ex-info {:reason :unresolved-var :line n}`;
@@ -258,16 +258,17 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
   - **whitespace goldens** (byte-exact `=` on multi-line strings): a 5-line template whose false if-branch leaves zero trace; taken branch preserved verbatim including indentation; inline if within a line; nested if inside case;
   - `render-segment`: tags zero-width, `""` result on false condition, filters work.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test test/frame/template/render_test.lg` — Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Tree-walk: text → verbatim; output → lookup (throw if absent), thread through `apply-filter`, `str` the result; if → evaluate branch conds in order; case → `str` the var value, compare against when values. Condition evaluator resolves identifiers against vars (missing → `nil`, except comparison operands fall back to the identifier string). `render-segment` = `render-string` on a lexer flag or post-hoc: simplest is to lex without the ownership pass — expose that via an option map argument to `render-string` and make `render-segment` the `{:mode :inline}` call.
+  > Deviation: added a 2-arity `lexer/tokenize` accepting `{:mode :inline}` (needed by `render-segment`). Output "unresolved var" check uses `contains?` (not nil-check) so a var that is legitimately `false`/`""` renders rather than erroring. Comparisons stringify both operands so `auth == false` works for boolean vars.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test test/frame/template/render_test.lg` — Expected: PASS.
 
-- [ ] **Step 5: Run all checks and commit**
+- [x] **Step 5: Run all checks and commit**
   Run: `lgx check` — Expected: green.
   `git commit -m "feat: template renderer with exact whitespace control"`
 

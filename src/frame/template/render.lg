@@ -1,0 +1,114 @@
+(ns frame.template.render
+  (:require [frame.template.filters :as filters]
+            [frame.template.lexer :as lex]
+            [frame.template.parser :as parser]))
+
+;; ---------------------------------------------------------------------------
+;; Renderer: node tree + vars -> string.
+;;
+;; `vars` is a map keyed by STRING var names (matching template identifiers),
+;; whose values are strings or booleans. Truthiness: false, nil, and "" are
+;; falsy; everything else is truthy.
+;; ---------------------------------------------------------------------------
+
+(defn- truthy? [v]
+  (cond
+    (nil? v) false
+    (= v false) false
+    (= v "") false
+    :else true))
+
+;; ---------------------------------------------------------------------------
+;; Condition evaluation
+;;
+;; Identifiers resolve against vars. In a comparison, an unresolved identifier
+;; falls back to its own name as a bare string literal (so `db == postgres`
+;; works unquoted). Both operands are stringified before comparing, so a
+;; boolean var compares correctly against a bare/quoted literal. A bare term at
+;; the top level tests truthiness; an unresolved bare identifier there is falsy.
+;; ---------------------------------------------------------------------------
+
+(defn- operand-value [vars term]
+  (if (= (:kind term) :str)
+    (:value term)
+    (let [v (get vars (:value term))]
+      (if (nil? v) (:value term) v))))
+
+(defn- eval-cmp [vars node]
+  (let [l (str (operand-value vars (:left node)))
+        r (str (operand-value vars (:right node)))
+        eq (= l r)]
+    (if (= (:cmp-op node) :eq) eq (not eq))))
+
+(defn- eval-cond [vars node]
+  (case (:op node)
+    :or (or (eval-cond vars (:left node)) (eval-cond vars (:right node)))
+    :and (and (eval-cond vars (:left node)) (eval-cond vars (:right node)))
+    :not (not (eval-cond vars (:expr node)))
+    :cmp (eval-cmp vars node)
+    :term (if (= (:kind node) :str)
+            (truthy? (:value node))
+            (truthy? (get vars (:value node))))))
+
+;; ---------------------------------------------------------------------------
+;; Node rendering
+;; ---------------------------------------------------------------------------
+
+(declare render-nodes render-node)
+
+(defn- render-output [vars node]
+  (when-not (contains? vars (:var node))
+    (throw (ex-info (str "unresolved variable: " (:var node))
+                    {:reason :unresolved-var
+                     :line (:line node)
+                     :var (:var node)})))
+  (reduce (fn [acc fname] (filters/apply-filter fname acc))
+          (str (get vars (:var node)))
+          (:filters node)))
+
+(defn- render-if [vars node]
+  (loop [branches (:branches node)]
+    (if (empty? branches)
+      (if (:else node) (render-nodes vars (:else node)) "")
+      (let [b (first branches)]
+        (if (eval-cond vars (:cond b))
+          (render-nodes vars (:body b))
+          (recur (rest branches)))))))
+
+(defn- render-case [vars node]
+  (let [v (str (get vars (:var node)))]
+    (loop [whens (:whens node)]
+      (if (empty? whens)
+        (if (:else node) (render-nodes vars (:else node)) "")
+        (let [w (first whens)]
+          (if (= v (:value w))
+            (render-nodes vars (:body w))
+            (recur (rest whens))))))))
+
+(defn- render-node [vars node]
+  (case (:node node)
+    :text (:value node)
+    :output (render-output vars node)
+    :if (render-if vars node)
+    :case (render-case vars node)))
+
+(defn- render-nodes [vars nodes]
+  (apply str (map (fn [n] (render-node vars n)) nodes)))
+
+;; ---------------------------------------------------------------------------
+;; Public entry points
+;; ---------------------------------------------------------------------------
+
+(defn render-string
+  "Render template source against vars, returning a string. `opts` is forwarded
+   to the lexer ({:mode :inline} skips the whitespace rule). Throws ex-info on
+   template syntax errors or an unresolved output variable, carrying :line."
+  ([template vars] (render-string template vars {}))
+  ([template vars opts]
+   (render-nodes vars (parser/parse (lex/tokenize template opts)))))
+
+(defn render-segment
+  "Render a single path segment in inline mode: tags are zero-width and the
+   line-ownership whitespace rule does not apply. A false condition yields \"\"."
+  [segment vars]
+  (render-string segment vars {:mode :inline}))
