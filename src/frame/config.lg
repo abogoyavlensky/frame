@@ -1,0 +1,61 @@
+(ns frame.config
+  (:require [edn]))
+
+;; ---------------------------------------------------------------------------
+;; frame.edn reading and validation.
+;;
+;; read-config returns a normalized map with defaults applied:
+;;   {:description s|nil :root "template" :vars [...] :computed {} :raw []}
+;; Every failure throws ex-info {:reason :config ...} before any prompting.
+;; ---------------------------------------------------------------------------
+
+(def ^:private valid-types #{:string :enum :boolean})
+
+(defn- config-error [msg data]
+  (throw (ex-info msg (assoc data :reason :config))))
+
+(defn- validate-var
+  "Validate one :vars entry, returning it unchanged on success."
+  [v]
+  (let [k (:key v)]
+    (when-not (keyword? k)
+      (config-error "each var needs a keyword :key" {:var v}))
+    (when (= k :project-name)
+      (config-error ":project-name is reserved and cannot be declared in :vars"
+                    {:var k}))
+    (when-not (string? (:prompt v))
+      (config-error (str "var " k " needs a string :prompt") {:var k}))
+    (when-not (contains? valid-types (:type v))
+      (config-error (str "var " k " has invalid :type " (pr-str (:type v))
+                         " (expected :string, :enum, or :boolean)")
+                    {:var k}))
+    (when (= (:type v) :enum)
+      (let [opts (:options v)]
+        (when-not (and (vector? opts) (seq opts))
+          (config-error (str "enum var " k " needs a non-empty :options vector")
+                        {:var k}))
+        (when (and (contains? v :default)
+                   (not (contains? (set opts) (:default v))))
+          (config-error (str "var " k " :default " (pr-str (:default v))
+                             " is not one of its :options")
+                        {:var k}))))
+    v))
+
+(defn read-config
+  "Read and validate <dir>/frame.edn. Returns the normalized config map or
+   throws ex-info {:reason :config ...}."
+  [dir]
+  (let [f (str dir "/frame.edn")]
+    (when-not (file-exists? f)
+      (config-error (str "frame.edn not found in " dir) {:dir dir}))
+    (let [raw (try (edn/read-string (slurp f))
+                   (catch e
+                          (config-error (str "could not parse frame.edn: " (ex-message e))
+                                        {:dir dir})))]
+      (when-not (map? raw)
+        (config-error "frame.edn must contain a map" {:dir dir}))
+      {:description (:description raw)
+       :root (or (:root raw) "template")
+       :vars (vec (map validate-var (or (:vars raw) [])))
+       :computed (or (:computed raw) {})
+       :raw (or (:raw raw) [])})))

@@ -300,19 +300,20 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 - Create: `src/frame/config.lg`
 - Test: `test/frame/config_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   `(read-config template-repo-dir)` reads `frame.edn`, returns `{:description s :root "template" :vars [...] :computed {} :raw []}` with defaults applied. Validation errors (`ex-info {:reason :config ...}`): missing file; invalid EDN; var without `:key`/`:prompt`; unknown `:type`; `:enum` without `:options`; `:default` not in `:options`; var keyed `:project-name` (reserved). Use a temp dir + `spit` in tests.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test test/frame/config_test.lg` — Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   `slurp` + `edn/read-string` (lgx requires `[edn]` — same here), a `validate-var` fn per entry, defaults merged. Keep messages specific: name the offending var key.
+  > Deviation: paths joined with `/` (Windows out of scope). Also require `:type` to be present (missing counts as invalid).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test test/frame/config_test.lg` — Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: frame.edn config reading and validation"`
 
 ### Task 8: Answers — --var parsing, defaults, computed vars, prompts

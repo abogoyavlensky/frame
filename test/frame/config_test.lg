@@ -1,0 +1,110 @@
+(ns frame.config-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.config :as config]))
+
+;; Write edn-str as frame.edn in a throwaway dir and read it back.
+(defn- read-edn [edn-str]
+  (let [dir (str (os/temp-dir) "/frame-config-test-" (rand-int 100000000))]
+    (mkdir dir)
+    (spit (str dir "/frame.edn") edn-str)
+    (let [r (try (config/read-config dir)
+                 (catch e {:error (ex-data e)
+                           :msg (ex-message e)}))]
+      (os/sh "rm" "-rf" dir)
+      r)))
+
+(defn- read-cfg [cfg]
+  (read-edn (pr-str cfg)))
+
+;; ---------------------------------------------------------------------------
+;; Valid configs + defaults
+;; ---------------------------------------------------------------------------
+
+(deftest applies-defaults-for-optional-keys
+  (let [r (read-cfg {:vars []})]
+    (is (= "template" (:root r)))
+    (is (= {} (:computed r)))
+    (is (= [] (:raw r)))
+    (is (= [] (:vars r)))))
+
+(deftest reads-full-config
+  (let [cfg {:description "Lightweight Clojure stack"
+             :root "tpl"
+             :vars [{:key :db
+                     :prompt "Database"
+                     :type :enum
+                     :options ["sqlite" "postgres"]
+                     :default "sqlite"}
+                    {:key :auth
+                     :prompt "Include auth?"
+                     :type :boolean
+                     :default true}
+                    {:key :author
+                     :prompt "Author"
+                     :type :string
+                     :default ""}]
+             :computed {:top-ns "{{project-name | snake_case}}"}
+             :raw ["**/*.png"]}
+        r (read-cfg cfg)]
+    (is (= "Lightweight Clojure stack" (:description r)))
+    (is (= "tpl" (:root r)))
+    (is (= 3 (count (:vars r))))
+    (is (= :db (:key (first (:vars r)))))
+    (is (= {:top-ns "{{project-name | snake_case}}"} (:computed r)))
+    (is (= ["**/*.png"] (:raw r)))))
+
+;; ---------------------------------------------------------------------------
+;; Validation errors (all carry {:reason :config})
+;; ---------------------------------------------------------------------------
+
+(deftest missing-file-errors
+  (let [dir (str (os/temp-dir) "/frame-config-missing-" (rand-int 100000000))]
+    (mkdir dir)
+    (let [r (try (config/read-config dir)
+                 (catch e (ex-data e)))]
+      (os/sh "rm" "-rf" dir)
+      (is (= :config (:reason r))))))
+
+(deftest invalid-edn-errors
+  (let [r (read-edn "{:vars [")]
+    (is (= :config (:reason (:error r))))))
+
+(deftest non-map-errors
+  (let [r (read-edn "[1 2 3]")]
+    (is (= :config (:reason (:error r))))))
+
+(deftest var-without-key-errors
+  (let [r (read-cfg {:vars [{:prompt "P"
+                             :type :string}]})]
+    (is (= :config (:reason (:error r))))))
+
+(deftest var-without-prompt-errors
+  (let [r (read-cfg {:vars [{:key :db
+                             :type :string}]})]
+    (is (= :config (:reason (:error r))))))
+
+(deftest unknown-type-errors
+  (let [r (read-cfg {:vars [{:key :db
+                             :prompt "P"
+                             :type :frobnicate}]})]
+    (is (= :config (:reason (:error r))))))
+
+(deftest enum-without-options-errors
+  (let [r (read-cfg {:vars [{:key :db
+                             :prompt "P"
+                             :type :enum}]})]
+    (is (= :config (:reason (:error r))))))
+
+(deftest default-not-in-options-errors
+  (let [r (read-cfg {:vars [{:key :db
+                             :prompt "P"
+                             :type :enum
+                             :options ["sqlite" "postgres"]
+                             :default "mysql"}]})]
+    (is (= :config (:reason (:error r))))))
+
+(deftest reserved-project-name-key-errors
+  (let [r (read-cfg {:vars [{:key :project-name
+                             :prompt "P"
+                             :type :string}]})]
+    (is (= :config (:reason (:error r))))))
