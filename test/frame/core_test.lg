@@ -1,0 +1,6 @@
+(ns frame.core-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.core :as c]))
+
+(deftest test-greet-ok
+  (is (= "Welcome to the frame app!" (c/greet {}))))
