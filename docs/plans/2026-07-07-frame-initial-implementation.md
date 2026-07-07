@@ -183,20 +183,21 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 - Create: `src/frame/template/filters.lg`
 - Test: `test/frame/template/filters_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Cover each filter through the public `(apply-filter name value)` fn: `snake_case` / `kebab_case` / `camel_case` / `pascal_case` from mixed inputs (`"my-app"`, `"my_app"`, `"MyApp"`, `"my app"`), `lower`, `upper`, `capitalize`; non-string input coerced via `str`; unknown filter throws `ex-info` with `{:reason :unknown-filter :filter name}`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test test/frame/template/filters_test.lg` — Expected: FAIL (namespace not found).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   A `filters` map of name→fn plus `apply-filter`. Case conversions share one tokenizer: split input into words on `-`, `_`, whitespace, and lower/upper camel boundaries; each case filter joins words its own way. Extension point is adding a map entry.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test test/frame/template/filters_test.lg` — Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: template filters with case conversions"`
+  > Deviation: added `.clj-kondo/config.edn` (adapted from lgx) so `lgx check` lint passes — clj-kondo can't parse let-go's typeless `(catch e ...)` without it. Needed project-wide.
 
 ### Task 3: Lexer with line-ownership
 

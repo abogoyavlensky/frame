@@ -1,0 +1,66 @@
+(ns frame.template.filters-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.template.filters :as f]))
+
+;; ---------------------------------------------------------------------------
+;; Case conversions from mixed inputs
+;; ---------------------------------------------------------------------------
+
+(deftest snake-case-from-mixed-inputs
+  (is (= "my_app" (f/apply-filter "snake_case" "my-app")))
+  (is (= "my_app" (f/apply-filter "snake_case" "my_app")))
+  (is (= "my_app" (f/apply-filter "snake_case" "MyApp")))
+  (is (= "my_app" (f/apply-filter "snake_case" "my app"))))
+
+(deftest kebab-case-from-mixed-inputs
+  (is (= "my-app" (f/apply-filter "kebab_case" "my-app")))
+  (is (= "my-app" (f/apply-filter "kebab_case" "my_app")))
+  (is (= "my-app" (f/apply-filter "kebab_case" "MyApp")))
+  (is (= "my-app" (f/apply-filter "kebab_case" "my app"))))
+
+(deftest camel-case-from-mixed-inputs
+  (is (= "myApp" (f/apply-filter "camel_case" "my-app")))
+  (is (= "myApp" (f/apply-filter "camel_case" "my_app")))
+  (is (= "myApp" (f/apply-filter "camel_case" "MyApp")))
+  (is (= "myApp" (f/apply-filter "camel_case" "my app"))))
+
+(deftest pascal-case-from-mixed-inputs
+  (is (= "MyApp" (f/apply-filter "pascal_case" "my-app")))
+  (is (= "MyApp" (f/apply-filter "pascal_case" "my_app")))
+  (is (= "MyApp" (f/apply-filter "pascal_case" "MyApp")))
+  (is (= "MyApp" (f/apply-filter "pascal_case" "my app"))))
+
+(deftest multi-word-case-conversions
+  (is (= "my_cool_app" (f/apply-filter "snake_case" "my cool app")))
+  (is (= "my-cool-app" (f/apply-filter "kebab_case" "myCoolApp")))
+  (is (= "MyCoolApp" (f/apply-filter "pascal_case" "my-cool-app")))
+  (is (= "myCoolApp" (f/apply-filter "camel_case" "My_Cool_App"))))
+
+;; ---------------------------------------------------------------------------
+;; Plain case filters
+;; ---------------------------------------------------------------------------
+
+(deftest lower-upper-capitalize
+  (is (= "myapp" (f/apply-filter "lower" "MyApp")))
+  (is (= "MYAPP" (f/apply-filter "upper" "MyApp")))
+  (is (= "Hello" (f/apply-filter "capitalize" "hello")))
+  (is (= "Myapp" (f/apply-filter "capitalize" "myApp"))))
+
+;; ---------------------------------------------------------------------------
+;; Coercion of non-string input via str
+;; ---------------------------------------------------------------------------
+
+(deftest coerces-non-string-input
+  (is (= "TRUE" (f/apply-filter "upper" true)))
+  (is (= "42" (f/apply-filter "snake_case" 42))))
+
+;; ---------------------------------------------------------------------------
+;; Unknown filter is an error
+;; ---------------------------------------------------------------------------
+
+(deftest unknown-filter-throws
+  (let [data (try (f/apply-filter "nope" "x")
+                  :no-throw
+                  (catch e (ex-data e)))]
+    (is (= :unknown-filter (:reason data)))
+    (is (= "nope" (:filter data)))))

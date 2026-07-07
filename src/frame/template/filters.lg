@@ -1,0 +1,101 @@
+(ns frame.template.filters
+  (:require [string :as str]))
+
+;; ---------------------------------------------------------------------------
+;; Word tokenizer
+;;
+;; Splits an identifier into its constituent words on separators (`-`, `_`,
+;; whitespace) and camelCase boundaries. Go's RE2 has no look-behind, so this
+;; is a hand-rolled character scan. A new word starts at:
+;;   - a separator (dropped), or
+;;   - a lower/digit -> upper transition (myApp -> my, App), or
+;;   - an upper -> upper-then-lower transition (HTTPServer -> HTTP, Server).
+;; Each case filter re-cases the words its own way.
+;; ---------------------------------------------------------------------------
+
+(defn- upper? [c] (and (>= (int c) 65) (<= (int c) 90)))
+(defn- lower? [c] (and (>= (int c) 97) (<= (int c) 122)))
+(defn- digit? [c] (and (>= (int c) 48) (<= (int c) 57)))
+
+(defn- separator? [c]
+  (or (= c \-) (= c \_) (= c \space) (= c \tab) (= c \newline) (= c \return)))
+
+(defn- boundary? [cur c nxt]
+  ;; c is upper and cur already holds a word: is this the start of a new word?
+  (and (upper? c)
+       (seq cur)
+       (let [prev (peek cur)]
+         (or (lower? prev)
+             (digit? prev)
+             (and (upper? prev) nxt (lower? nxt))))))
+
+(defn words
+  "Split s into a vector of word segments, dropping separators and breaking on
+   camelCase boundaries. Words retain their original letters; casing is applied
+   by the individual filters."
+  [s]
+  (let [cs (vec (seq (str s)))
+        n (count cs)]
+    (loop [i 0
+           cur []
+           acc []]
+      (if (>= i n)
+        (if (seq cur) (conj acc (apply str cur)) acc)
+        (let [c (nth cs i)
+              nxt (when (< (inc i) n) (nth cs (inc i)))]
+          (cond
+            (separator? c)
+            (recur (inc i) [] (if (seq cur) (conj acc (apply str cur)) acc))
+
+            (boundary? cur c nxt)
+            (recur (inc i) [c] (conj acc (apply str cur)))
+
+            :else
+            (recur (inc i) (conj cur c) acc)))))))
+
+;; ---------------------------------------------------------------------------
+;; Case filters built on the tokenizer
+;; ---------------------------------------------------------------------------
+
+(defn- snake-case [s]
+  (str/join "_" (map str/lower-case (words s))))
+
+(defn- kebab-case [s]
+  (str/join "-" (map str/lower-case (words s))))
+
+(defn- pascal-case [s]
+  (str/join "" (map str/capitalize (words s))))
+
+(defn- camel-case [s]
+  (let [ws (words s)]
+    (if (empty? ws)
+      ""
+      (str/join "" (cons (str/lower-case (first ws))
+                         (map str/capitalize (rest ws)))))))
+
+;; ---------------------------------------------------------------------------
+;; Filter registry
+;;
+;; name -> (fn [string] string). Adding a filter is one entry. Every filter
+;; receives an already-stringified value (see apply-filter).
+;; ---------------------------------------------------------------------------
+
+(def filters
+  {"snake_case" snake-case
+   "kebab_case" kebab-case
+   "camel_case" camel-case
+   "pascal_case" pascal-case
+   "lower" str/lower-case
+   "upper" str/upper-case
+   "capitalize" str/capitalize})
+
+(defn apply-filter
+  "Apply the named filter to value, coercing value to a string first. Throws
+   ex-info {:reason :unknown-filter :filter name} for an unregistered name."
+  [name value]
+  (let [f (get filters name)]
+    (when (nil? f)
+      (throw (ex-info (str "unknown filter: " name)
+                      {:reason :unknown-filter
+                       :filter name})))
+    (f (str value))))
