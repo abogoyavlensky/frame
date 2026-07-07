@@ -1,0 +1,12 @@
+{:description "Demo template exercising every frame feature"
+ :vars [{:key :db
+         :prompt "Database"
+         :type :enum
+         :options ["sqlite" "postgres"]
+         :default "sqlite"}
+        {:key :auth
+         :prompt "Include authentication?"
+         :type :boolean
+         :default true}]
+ :computed {:top-ns "{{ project-name | snake_case }}"}
+ :raw ["**/*.bin"]}

@@ -373,7 +373,7 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 - Create: `test/frame/fixtures/demo-expected/` (golden output)
 - Test: `test/frame/generate_test.lg`
 
-- [ ] **Step 1: Build the fixture template**
+- [x] **Step 1: Build the fixture template**
   `demo-template/frame.edn`: vars `db` (enum sqlite/postgres, default sqlite), `auth` (boolean, default true), computed `top-ns`, raw `["**/*.bin"]`. `template/` exercises every feature:
   - `README.md` with substitution, filters, an if block whose false branch would leave a blank line in naive engines, and a case on `db`;
   - `src/{{project-name | snake_case}}/core.clj`;
@@ -382,23 +382,24 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
   - `logo.bin` containing a null byte and `{{ project-name }}` literal (must copy verbatim).
   `demo-expected/` is the byte-exact defaults rendering with project-name `demo-app`.
 
-- [ ] **Step 2: Write failing tests**
+- [x] **Step 2: Write failing tests**
   `(generate! template-repo-dir target answers config)`:
   - golden test: generate into a fresh temp dir with defaults answers, then walk both trees — identical relative path sets and byte-identical contents (`slurp` + `=`);
   - postgres answers flip which `migrations` survives and change the case branch;
   - destination collision (add a colliding fixture pair in a second mini-fixture or construct via temp dir) → `ex-info {:reason :collision}` and target dir left without partial output;
   - content syntax error in a fixture file → error message contains `<relative-path>:<line>` and nothing is written.
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
   Run: `lgx test test/frame/generate_test.lg` — Expected: FAIL.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
   Walk `:root` (adapt lgx `new.lg` `walk-template`); for each file build `{:dst rel :content s}` fully in memory: render each path segment with `render-segment` (any empty segment → skip file), match `:raw` globs / null-byte sniff → raw content, else `render-string` (wrap errors with the file's relative path). Then collision check on `:dst`, then a single write pass (`mkdir` parents, `spit`; raw files copied bytewise — verify `slurp`/`spit` round-trip binary in let-go; if not, shell out to `cp`). Note: skip `.gitkeep`-only semantics — copy `.gitkeep` files as-is.
+  > Deviation: verified `slurp`/`spit` round-trips binary byte-for-byte in let-go, so no `cp` fallback needed. `:raw` globs are matched against the source relative path; null-byte sniff covers the first 8000 chars. The golden `demo-expected/` was produced by the (unit-tested) engine and inspected byte-for-byte before saving.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
   Run: `lgx test test/frame/generate_test.lg` — Expected: PASS. Then `lgx check` — Expected: green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "feat: project generation with golden end-to-end test"`
 
 ### Task 11: CLI wiring — `frame new`

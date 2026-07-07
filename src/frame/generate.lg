@@ -1,0 +1,123 @@
+(ns frame.generate
+  (:require [frame.glob :as glob]
+            [frame.template.render :as render]
+            [string :as str]))
+
+;; ---------------------------------------------------------------------------
+;; Generation: walk the template root, render every path + content fully in
+;; memory, detect destination collisions, then write in a single pass. Any
+;; render/collision error aborts before anything is written.
+;; ---------------------------------------------------------------------------
+
+(defn- parent-dir [p]
+  (let [i (str/last-index-of p "/")]
+    (if (nil? i) "." (subs p 0 i))))
+
+(defn- walk*
+  "Recursively collect absolute file paths under dir."
+  [dir]
+  (reduce
+    (fn [acc name]
+      (let [abs (str dir "/" name)
+            stat (os/stat abs)]
+        (cond
+          (nil? stat) acc
+          (:dir? stat) (vec (concat acc (walk* abs)))
+          :else (conj acc abs))))
+    []
+    (os/ls dir)))
+
+(defn- walk-files [root]
+  (vec (sort (walk* root))))
+
+(defn- relative-to [root abs]
+  (let [prefix (str root "/")]
+    (if (str/starts-with? abs prefix)
+      (subs abs (count prefix))
+      abs)))
+
+;; ---------------------------------------------------------------------------
+;; Path + content rendering
+;; ---------------------------------------------------------------------------
+
+(defn- render-path
+  "Render each segment of rel-src. Returns the rendered relative path, or nil
+   when any segment renders empty (the file/subtree is skipped)."
+  [rel-src answers]
+  (let [rendered (map (fn [seg] (render/render-segment seg answers))
+                      (str/split rel-src "/"))]
+    (when-not (some (fn [s] (= s "")) rendered)
+      (str/join "/" rendered))))
+
+(defn- binary?
+  "Sniff the first 8000 chars for a null byte (code 0)."
+  [content]
+  (boolean (some zero? (map int (take 8000 (seq content))))))
+
+(defn- raw-file? [config rel-src content]
+  (or (some (fn [pat] (glob/matches? pat rel-src)) (:raw config))
+      (binary? content)))
+
+(defn- build-entries
+  "Build {:dst :content :src} for every surviving file, all in memory. Render
+   errors are re-thrown with a template-relative file:line prefix."
+  [root answers config]
+  (reduce
+    (fn [acc abs]
+      (let [rel-src (relative-to root abs)
+            dst (render-path rel-src answers)]
+        (if (nil? dst)
+          acc
+          (let [content (slurp abs)
+                out (if (raw-file? config rel-src content)
+                      content
+                      (try
+                        (render/render-string content answers)
+                        (catch e
+                               (let [data (or (ex-data e) {})
+                                     line (:line data)
+                                     loc (if line (str rel-src ":" line) rel-src)]
+                                 (throw (ex-info (str loc ": " (ex-message e))
+                                                 (assoc data
+                                                        :file rel-src
+                                                        :reason (or (:reason data) :render))))))))]
+            (conj acc {:dst dst
+                       :content out
+                       :src rel-src})))))
+    []
+    (walk-files root)))
+
+;; ---------------------------------------------------------------------------
+;; Collision detection + write
+;; ---------------------------------------------------------------------------
+
+(defn- check-collisions! [entries]
+  (doseq [[dst es] (group-by :dst entries)]
+    (when (> (count es) 1)
+      (throw (ex-info (str "multiple template files render to " dst ": "
+                           (str/join ", " (map :src es)))
+                      {:reason :collision
+                       :dst dst
+                       :sources (mapv :src es)})))))
+
+(defn- write-entries! [target entries]
+  (mkdir target)
+  (doseq [{:keys [dst content]} entries]
+    (let [abs (str target "/" dst)]
+      (mkdir (parent-dir abs))
+      (spit abs content))))
+
+;; ---------------------------------------------------------------------------
+;; Public entry
+;; ---------------------------------------------------------------------------
+
+(defn generate!
+  "Render the template at template-repo-dir into target using answers/config.
+   Everything is rendered in memory and collision-checked before any write, so
+   a render/collision error leaves target untouched. Returns the file count."
+  [template-repo-dir target answers config]
+  (let [root (str template-repo-dir "/" (:root config))
+        entries (build-entries root answers config)]
+    (check-collisions! entries)
+    (write-entries! target entries)
+    (count entries)))

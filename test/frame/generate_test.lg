@@ -1,0 +1,131 @@
+(ns frame.generate-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.config :as config]
+            [frame.generate :as generate]
+            [string :as str]))
+
+(def ^:private demo-template "test/frame/fixtures/demo-template")
+(def ^:private demo-expected "test/frame/fixtures/demo-expected")
+
+(defn- tmp-dir []
+  (str (os/temp-dir) "/frame-gen-test-" (rand-int 100000000)))
+
+(defn- walk-abs [dir]
+  (reduce
+    (fn [acc name]
+      (let [abs (str dir "/" name)
+            st (os/stat abs)]
+        (cond
+          (nil? st) acc
+          (:dir? st) (vec (concat acc (walk-abs abs)))
+          :else (conj acc abs))))
+    []
+    (os/ls dir)))
+
+(defn- tree-map [root]
+  (reduce
+    (fn [acc abs]
+      (assoc acc (subs abs (inc (count root))) (slurp abs)))
+    {}
+    (walk-abs root)))
+
+(defn- threw [f]
+  (try (f) :no-throw (catch e {:data (ex-data e)
+                               :msg (ex-message e)})))
+
+;; ---------------------------------------------------------------------------
+;; Golden end-to-end (defaults)
+;; ---------------------------------------------------------------------------
+
+(deftest golden-defaults
+  (let [target (tmp-dir)
+        cfg (config/read-config demo-template)
+        answers {"project-name" "demo-app"
+                 "db" "sqlite"
+                 "auth" true
+                 "top-ns" "demo_app"}]
+    (generate/generate! demo-template target answers cfg)
+    (let [got (tree-map target)
+          want (tree-map demo-expected)]
+      (os/sh "rm" "-rf" target)
+      (is (= (set (keys want)) (set (keys got))))
+      (doseq [k (keys want)]
+        (is (= (get want k) (get got k)) (str "content mismatch: " k))))))
+
+;; ---------------------------------------------------------------------------
+;; Answer-driven path/content selection
+;; ---------------------------------------------------------------------------
+
+(deftest postgres-flips-migration-and-case-branch
+  (let [target (tmp-dir)
+        cfg (config/read-config demo-template)
+        answers {"project-name" "demo-app"
+                 "db" "postgres"
+                 "auth" true
+                 "top-ns" "demo_app"}]
+    (generate/generate! demo-template target answers cfg)
+    (let [got (tree-map target)]
+      (os/sh "rm" "-rf" target)
+      (is (contains? got "resources/migrations/0001.sql"))
+      (is (str/includes? (get got "resources/migrations/0001.sql") "SERIAL"))
+      (is (str/includes? (get got "README.md") "- PostgreSQL"))
+      (is (not (str/includes? (get got "README.md") "- SQLite"))))))
+
+(deftest auth-false-skips-auth-subtree
+  (let [target (tmp-dir)
+        cfg (config/read-config demo-template)
+        answers {"project-name" "demo-app"
+                 "db" "sqlite"
+                 "auth" false
+                 "top-ns" "demo_app"}]
+    (generate/generate! demo-template target answers cfg)
+    (let [got (tree-map target)]
+      (os/sh "rm" "-rf" target)
+      (is (not (contains? got "auth/handlers.clj")))
+      (is (not (str/includes? (get got "README.md") "Authentication is included."))))))
+
+;; ---------------------------------------------------------------------------
+;; Collision detection (nothing written)
+;; ---------------------------------------------------------------------------
+
+(deftest destination-collision-aborts-before-writing
+  (let [tpl (tmp-dir)
+        target (tmp-dir)]
+    (mkdir (str tpl "/template/{% if x %}dir{% endif %}"))
+    (mkdir (str tpl "/template/{% if y %}dir{% endif %}"))
+    (spit (str tpl "/frame.edn")
+          (pr-str {:vars [{:key :x
+                           :prompt "x"
+                           :type :boolean
+                           :default true}
+                          {:key :y
+                           :prompt "y"
+                           :type :boolean
+                           :default true}]}))
+    (spit (str tpl "/template/{% if x %}dir{% endif %}/f.txt") "A")
+    (spit (str tpl "/template/{% if y %}dir{% endif %}/f.txt") "B")
+    (let [cfg (config/read-config tpl)
+          r (threw #(generate/generate! tpl target {"x" true
+                                                    "y" true} cfg))]
+      (is (= :collision (:reason (:data r))))
+      ;; Both colliding sources are named.
+      (is (str/includes? (:msg r) "dir/f.txt"))
+      ;; Nothing was written: target was never created.
+      (is (not (file-exists? target)))
+      (os/sh "rm" "-rf" tpl))))
+
+;; ---------------------------------------------------------------------------
+;; Content render error reports file:line and writes nothing
+;; ---------------------------------------------------------------------------
+
+(deftest content-error-reports-file-line-and-writes-nothing
+  (let [tpl (tmp-dir)
+        target (tmp-dir)]
+    (mkdir (str tpl "/template"))
+    (spit (str tpl "/frame.edn") (pr-str {:vars []}))
+    (spit (str tpl "/template/bad.txt") "ok line\n{{ missing }}\n")
+    (let [cfg (config/read-config tpl)
+          r (threw #(generate/generate! tpl target {"project-name" "x"} cfg))]
+      (is (str/includes? (:msg r) "bad.txt:2"))
+      (is (not (file-exists? target)))
+      (os/sh "rm" "-rf" tpl))))
