@@ -434,10 +434,10 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Write user docs**
+- [x] **Step 1: Write user docs**
   Sections: what frame is; `frame new` usage (`--var`, `--defaults`, `--dir`); template-author guide — repo layout (`frame.edn` + `template/`), full syntax reference (output, filters list, if/case, condition grammar, bare literals), **the whitespace rule with a before/after example**, path templating + empty-segment-skip with the dual-`migrations` example, `frame.edn` reference (`:vars` types, `:computed`, `:raw`, `:root`). Use /writing-clearly.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -m "docs: usage and template-author guide"`
 
 ---
