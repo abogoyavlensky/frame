@@ -74,7 +74,12 @@
 
             :else
             (let [end (bare-end v i)]
-              (recur end (conj toks (apply str (subvec v i end)))))))))))
+              ;; A lone `=` or `!` (not part of ==/!=) is a stop char, so
+              ;; bare-end makes no progress; reject it instead of looping.
+              (if (= end i)
+                (throw (ex-info (str "unexpected '" (nth v i) "' in condition")
+                                {:reason :syntax}))
+                (recur end (conj toks (apply str (subvec v i end))))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Condition recursive descent (and binds tighter than or)
@@ -163,11 +168,23 @@
   #{"if" "elsif" "else" "endif" "case" "when" "endcase"})
 
 (defn- tag-parts
-  "Split a tag token's value into {:kw first-word :rest the-remainder}."
+  "Split a tag token's value into {:kw first-word :rest the-remainder}. Only the
+   first whitespace run is consumed; the remainder is kept verbatim (outer
+   trim only) so quoted literals keep their internal spacing."
   [tok]
-  (let [parts (str/split (str/trim (:value tok)) #"\s+")]
-    {:kw (first parts)
-     :rest (str/join " " (rest parts))}))
+  (let [v (str/trim (:value tok))
+        cs (vec (seq v))
+        n (count cs)
+        ws-i (loop [i 0]
+               (cond
+                 (>= i n) nil
+                 (ws-char? (nth cs i)) i
+                 :else (recur (inc i))))]
+    (if (nil? ws-i)
+      {:kw v
+       :rest ""}
+      {:kw (subs v 0 ws-i)
+       :rest (str/trim (subs v ws-i))})))
 
 (defn- unquote-literal [s]
   (let [s (str/trim s)]

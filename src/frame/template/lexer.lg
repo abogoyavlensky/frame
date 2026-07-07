@@ -175,8 +175,13 @@
 ;; ---------------------------------------------------------------------------
 
 (defn tokenize
-  "Tokenize template source into a vector of tokens, applying the line-ownership
-   whitespace rule. Throws ex-info {:reason :syntax :line n} on unterminated
-   delimiters."
-  [s]
-  (apply-ownership (scan s)))
+  "Tokenize template source into a vector of tokens. In the default mode the
+   line-ownership whitespace rule is applied; with {:mode :inline} (used for
+   path segments) it is skipped and tags are simply zero-width. Throws ex-info
+   {:reason :syntax :line n} on unterminated delimiters."
+  ([s] (tokenize s {}))
+  ([s opts]
+   (let [tokens (scan s)]
+     (if (= (:mode opts) :inline)
+       tokens
+       (apply-ownership tokens)))))

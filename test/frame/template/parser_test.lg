@@ -100,6 +100,12 @@
   (is (= :syntax (:reason (syntax-error #(p/parse-cond "a b")))))
   (is (= :syntax (:reason (syntax-error #(p/parse-cond "a =="))))))
 
+(deftest cond-lone-operator-throws-not-hangs
+  ;; A lone `=` or `!` must raise a syntax error instead of looping forever.
+  (is (= :syntax (:reason (syntax-error #(p/parse-cond "a = b")))))
+  (is (= :syntax (:reason (syntax-error #(p/parse-cond "a ! b")))))
+  (is (= :syntax (:reason (syntax-error #(parse-str "{% if a = b %}x{% endif %}"))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Block parsing: nodes
 ;; ---------------------------------------------------------------------------
@@ -180,6 +186,31 @@
                          "{% when postgres %}P"
                          "{% else %}D"
                          "{% endcase %}")))))
+
+(deftest quoted-literal-internal-whitespace-preserved
+  ;; Through a full tag: tag-parts must not collapse the literal's inner spaces.
+  (is (= [{:node :if
+           :branches [{:cond {:op :cmp
+                              :cmp-op :eq
+                              :left {:op :term
+                                     :kind :ident
+                                     :value "name"}
+                              :right {:op :term
+                                      :kind :str
+                                      :value "hello   world"}}
+                       :body [{:node :text
+                               :value "x"}]}]
+           :else nil}]
+         (parse-str "{% if name == \"hello   world\" %}x{% endif %}"))))
+
+(deftest when-quoted-internal-whitespace-preserved
+  (is (= [{:node :case
+           :var "x"
+           :whens [{:value "a  b"
+                    :body [{:node :text
+                            :value "S"}]}]
+           :else nil}]
+         (parse-str "{% case x %}{% when \"a  b\" %}S{% endcase %}"))))
 
 (deftest parse-case-discards-text-before-first-when
   (is (= [{:node :case
