@@ -48,14 +48,19 @@
   (let [f (str dir "/frame.edn")]
     (when-not (file-exists? f)
       (config-error (str "frame.edn not found in " dir) {:dir dir}))
-    (let [raw (try (edn/read-string (slurp f))
-                   (catch e
-                          (config-error (str "could not parse frame.edn: " (ex-message e))
-                                        {:dir dir})))]
-      (when-not (map? raw)
-        (config-error "frame.edn must contain a map" {:dir dir}))
-      {:description (:description raw)
-       :root (or (:root raw) "template")
-       :vars (vec (map validate-var (or (:vars raw) [])))
-       :computed (or (:computed raw) {})
-       :raw (or (:raw raw) [])})))
+    ;; Wrap in a vector so ALL top-level forms are read: this rejects trailing
+    ;; data (e.g. leftover merge-conflict text) that read-string would ignore.
+    (let [forms (try (edn/read-string (str "[" (slurp f) "]"))
+                     (catch e
+                            (config-error (str "could not parse frame.edn: " (ex-message e))
+                                          {:dir dir})))]
+      (when-not (= 1 (count forms))
+        (config-error "frame.edn must contain exactly one top-level map" {:dir dir}))
+      (let [raw (first forms)]
+        (when-not (map? raw)
+          (config-error "frame.edn must contain a map" {:dir dir}))
+        {:description (:description raw)
+         :root (or (:root raw) "template")
+         :vars (vec (map validate-var (or (:vars raw) [])))
+         :computed (or (:computed raw) {})
+         :raw (or (:raw raw) [])}))))

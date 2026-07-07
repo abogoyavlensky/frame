@@ -73,6 +73,12 @@
   (let [r (read-edn "[1 2 3]")]
     (is (= :config (:reason (:error r))))))
 
+(deftest trailing-data-errors
+  ;; A valid map followed by leftover text (e.g. a merge conflict) is rejected,
+  ;; not silently ignored.
+  (is (= :config (:reason (:error (read-edn "{:vars []} some junk here")))))
+  (is (= :config (:reason (:error (read-edn "{:vars []}\n{:vars []}"))))))
+
 (deftest var-without-key-errors
   (let [r (read-cfg {:vars [{:prompt "P"
                              :type :string}]})]
