@@ -1,0 +1,144 @@
+(ns frame.template.lexer-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.template.lexer :as lex]))
+
+;; ---------------------------------------------------------------------------
+;; Basic tokenization
+;; ---------------------------------------------------------------------------
+
+(deftest plain-text
+  (is (= [{:type :text
+           :value "hello world"
+           :line 1}]
+         (lex/tokenize "hello world"))))
+
+(deftest newlines-preserved-in-text
+  (is (= [{:type :text
+           :value "line1\nline2"
+           :line 1}]
+         (lex/tokenize "line1\nline2"))))
+
+(deftest output-mid-line
+  (is (= [{:type :text
+           :value "a "
+           :line 1}
+          {:type :output
+           :value "x"
+           :line 1}
+          {:type :text
+           :value " b"
+           :line 1}]
+         (lex/tokenize "a {{ x }} b"))))
+
+(deftest output-inner-trimmed-with-filters
+  (is (= [{:type :output
+           :value "project-name | snake_case"
+           :line 1}]
+         (lex/tokenize "{{ project-name | snake_case }}"))))
+
+(deftest tag-mid-line-zero-width
+  ;; A tag mixed with content on a line is removed in place; surrounding text
+  ;; (including the spaces) is preserved exactly.
+  (is (= [{:type :text
+           :value "a "
+           :line 1}
+          {:type :tag
+           :value "if x"
+           :line 1}
+          {:type :text
+           :value " b"
+           :line 1}]
+         (lex/tokenize "a {% if x %} b"))))
+
+;; ---------------------------------------------------------------------------
+;; Line-ownership whitespace rule
+;; ---------------------------------------------------------------------------
+
+(deftest tag-alone-on-line-owns-whitespace-and-newline
+  ;; The leading "  " and the trailing "  \n" around the standalone tag are
+  ;; consumed; the previous line's own "\n" survives.
+  (is (= [{:type :text
+           :value "x\n"
+           :line 1}
+          {:type :tag
+           :value "if y"
+           :line 2}
+          {:type :text
+           :value "z"
+           :line 2}]
+         (lex/tokenize "x\n  {% if y %}  \nz"))))
+
+(deftest tag-alone-at-start-consumes-trailing-newline
+  (is (= [{:type :tag
+           :value "if x"
+           :line 1}
+          {:type :text
+           :value "body"
+           :line 1}]
+         (lex/tokenize "{% if x %}\nbody"))))
+
+(deftest two-tags-on-one-line-both-non-owning
+  ;; Neither tag owns the line, so the surrounding whitespace is preserved.
+  (is (= [{:type :text
+           :value "  "
+           :line 1}
+          {:type :tag
+           :value "if x"
+           :line 1}
+          {:type :tag
+           :value "endif"
+           :line 1}
+          {:type :text
+           :value "  \n"
+           :line 1}]
+         (lex/tokenize "  {% if x %}{% endif %}  \n"))))
+
+(deftest output-alone-on-line-not-owning
+  ;; Output tags are never line-owning; whitespace stays put.
+  (is (= [{:type :text
+           :value "  "
+           :line 1}
+          {:type :output
+           :value "x"
+           :line 1}
+          {:type :text
+           :value "  \n"
+           :line 1}]
+         (lex/tokenize "  {{ x }}  \n"))))
+
+;; ---------------------------------------------------------------------------
+;; Line tracking across multi-line input
+;; ---------------------------------------------------------------------------
+
+(deftest tracks-line-numbers
+  (is (= [{:type :text
+           :value "a\n"
+           :line 1}
+          {:type :output
+           :value "x"
+           :line 2}
+          {:type :text
+           :value "\n"
+           :line 2}
+          {:type :tag
+           :value "if y"
+           :line 3}]
+         (lex/tokenize "a\n{{ x }}\n{% if y %}"))))
+
+;; ---------------------------------------------------------------------------
+;; Syntax errors
+;; ---------------------------------------------------------------------------
+
+(deftest unterminated-output-throws
+  (let [data (try (lex/tokenize "a {{ x")
+                  :no-throw
+                  (catch e (ex-data e)))]
+    (is (= :syntax (:reason data)))
+    (is (= 1 (:line data)))))
+
+(deftest unterminated-tag-throws-with-line
+  (let [data (try (lex/tokenize "a\n{% if")
+                  :no-throw
+                  (catch e (ex-data e)))]
+    (is (= :syntax (:reason data)))
+    (is (= 2 (:line data)))))

@@ -205,19 +205,20 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 - Create: `src/frame/template/lexer.lg`
 - Test: `test/frame/template/lexer_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   `(tokenize s)` returns a vector of tokens `{:type :text|:output|:tag :value <inner trimmed string> :line <1-based>}` (text tokens carry raw text in `:value`). Cases: plain text; `{{ var }}` mid-line; `{% if x %}` mid-line (zero-width: surrounding text preserved exactly); **a tag alone on a line consumes leading whitespace and the trailing newline** (the emitted text tokens around it prove it); two tags on one line are both non-owning; an output tag alone on a line is NOT line-owning; unterminated `{{` or `{%` throws `ex-info` with `{:reason :syntax :line n}`; `\n` inside text preserved; correct `:line` numbers across multi-line input.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test test/frame/template/lexer_test.lg` — Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Single scan with `str/index-of` finding the next `{{` or `{%` (no regex needed): emit text token, find matching `}}`/`%}` (unterminated → throw), emit output/tag token, track line count. Then the ownership pass: for each `:tag` token, if the text token before it ends with `\n` (or is start-of-input) followed only by spaces/tabs, and the text after it starts with optional spaces/tabs then `\n` (or end-of-input), strip that whitespace from the neighbors including the trailing newline. Keep the two phases as separate fns; only `tokenize` is public.
+  > Deviation: emptied text tokens are dropped after stripping (cleaner stream); text-token `:line` is the pre-strip line (only tag/output lines feed errors, so always accurate). Disjoint-strip reasoning documented in the source.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test test/frame/template/lexer_test.lg` — Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: template lexer with line-owning tag whitespace rule"`
 
 ### Task 4: Parser — AST and condition grammar

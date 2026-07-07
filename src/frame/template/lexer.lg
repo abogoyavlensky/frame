@@ -1,0 +1,182 @@
+(ns frame.template.lexer
+  (:require [string :as str]))
+
+;; ---------------------------------------------------------------------------
+;; Tokens
+;;
+;; A token is {:type :text|:output|:tag :value <string> :line <1-based>}.
+;;   :text   -> raw source text (:value is verbatim).
+;;   :output -> a {{ ... }} expression (:value is the trimmed inner text).
+;;   :tag    -> a {% ... %} statement  (:value is the trimmed inner text).
+;;
+;; Tokenizing is two phases: a linear scan, then a line-ownership pass that
+;; implements the whitespace rule (see below). Only `tokenize` is public.
+;; ---------------------------------------------------------------------------
+
+(defn- count-newlines [s]
+  (reduce (fn [acc c] (if (= c \newline) (inc acc) acc)) 0 (seq s)))
+
+;; ---------------------------------------------------------------------------
+;; Phase 1: linear scan
+;; ---------------------------------------------------------------------------
+
+(defn- scan
+  "Walk s, emitting text/output/tag tokens. Throws ex-info
+   {:reason :syntax :line n} on an unterminated {{ or {%."
+  [s]
+  (let [len (count s)]
+    (loop [pos 0
+           line 1
+           tokens []]
+      (if (>= pos len)
+        tokens
+        (let [oi (str/index-of s "{{" pos)
+              ti (str/index-of s "{%" pos)
+              ni (cond
+                   (nil? oi) ti
+                   (nil? ti) oi
+                   :else (min oi ti))]
+          (if (nil? ni)
+            ;; No more delimiters: the rest is text.
+            (conj tokens {:type :text
+                          :value (subs s pos)
+                          :line line})
+            (let [pre (subs s pos ni)
+                  tokens (if (empty? pre)
+                           tokens
+                           (conj tokens {:type :text
+                                         :value pre
+                                         :line line}))
+                  line (+ line (count-newlines pre))
+                  output? (= ni oi)
+                  close-str (if output? "}}" "%}")
+                  ctype (if output? :output :tag)
+                  close (str/index-of s close-str (+ ni 2))]
+              (when (nil? close)
+                (throw (ex-info (str "unterminated "
+                                     (if output? "output" "tag")
+                                     " at line " line)
+                                {:reason :syntax
+                                 :line line})))
+              (let [raw (subs s ni (+ close 2))
+                    inner (str/trim (subs s (+ ni 2) close))]
+                (recur (+ close 2)
+                       (+ line (count-newlines raw))
+                       (conj tokens {:type ctype
+                                     :value inner
+                                     :line line}))))))))))
+
+;; ---------------------------------------------------------------------------
+;; Phase 2: line-ownership
+;;
+;; A :tag that is the only non-whitespace content on its physical line "owns"
+;; the line: its leading whitespace and its trailing whitespace+newline are
+;; removed, so a false branch leaves no phantom blank line and a taken branch
+;; lands exactly as written. Output tokens are never line-owning.
+;;
+;; A tag at index i is line-owning when both hold, computed against the
+;; ORIGINAL neighbor tokens:
+;;   - left:  the tag is at start-of-input, or the previous text token's tail
+;;            (after its last newline) is all spaces/tabs back to that newline
+;;            (or back to start-of-input when the text is the very first token).
+;;   - right: the tag is at end-of-input, or the next text token's head (up to
+;;            its first newline) is all spaces/tabs (or the whole text is
+;;            spaces/tabs when it is the very last token).
+;; The strips are disjoint (prefix up to & incl. first newline vs. suffix after
+;; the last newline), so all decisions are made first, then applied together.
+;; ---------------------------------------------------------------------------
+
+(defn- all-ws?
+  "True when s is empty or only spaces and tabs."
+  [s]
+  (every? #(or (= % \space) (= % \tab)) (seq s)))
+
+(defn- left-strip
+  "If the tag at index i is left-owning, return the number of chars to strip
+   from the END of the previous text token (its trailing whitespace fragment);
+   else nil."
+  [tokens i]
+  (if (zero? i)
+    0
+    (let [prev (nth tokens (dec i))]
+      (when (= (:type prev) :text)
+        (let [v (:value prev)
+              nl (str/last-index-of v "\n")]
+          (if (nil? nl)
+            ;; No newline: owning only when prev is the first token (line start
+            ;; == start of input) and the whole fragment is whitespace.
+            (when (and (zero? (dec i)) (all-ws? v))
+              (count v))
+            (let [frag (subs v (inc nl))]
+              (when (all-ws? frag)
+                (count frag)))))))))
+
+(defn- right-strip
+  "If the tag at index i is right-owning, return the number of chars to strip
+   from the START of the next text token (leading whitespace + the newline);
+   else nil."
+  [tokens i]
+  (let [last-i (dec (count tokens))]
+    (if (= i last-i)
+      0
+      (let [nxt (nth tokens (inc i))]
+        (when (= (:type nxt) :text)
+          (let [v (:value nxt)
+                nl (str/index-of v "\n")]
+            (if (nil? nl)
+              ;; No newline: owning only when nxt is the last token (line end
+              ;; == end of input) and the whole head is whitespace.
+              (when (and (= (inc i) last-i) (all-ws? v))
+                (count v))
+              (let [head (subs v 0 nl)]
+                (when (all-ws? head)
+                  (inc nl))))))))))
+
+(defn- ownership-strips
+  "Return a map of text-token-index -> {:start n :end m} of chars to strip,
+   derived from every line-owning tag."
+  [tokens]
+  (let [n (count tokens)]
+    (reduce
+      (fn [acc i]
+        (if (not= (:type (nth tokens i)) :tag)
+          acc
+          (let [l (left-strip tokens i)
+                r (right-strip tokens i)]
+            (if (and (some? l) (some? r))
+              (cond-> acc
+                (> i 0) (update (dec i) #(assoc (or % {}) :end l))
+                (< i (dec n)) (update (inc i) #(assoc (or % {}) :start r)))
+              acc))))
+      {}
+      (range n))))
+
+(defn- apply-ownership
+  "Apply the computed strips, dropping any text token emptied by stripping."
+  [tokens]
+  (let [strips (ownership-strips tokens)]
+    (vec
+      (keep-indexed
+        (fn [i t]
+          (if (not= (:type t) :text)
+            t
+            (let [{:keys [start end]} (get strips i)
+                  v (:value t)
+                  len (count v)
+                  s (or start 0)
+                  e (or end 0)
+                  v2 (if (>= (+ s e) len) "" (subs v s (- len e)))]
+              (when (not= v2 "")
+                (assoc t :value v2)))))
+        tokens))))
+
+;; ---------------------------------------------------------------------------
+;; Public entry
+;; ---------------------------------------------------------------------------
+
+(defn tokenize
+  "Tokenize template source into a vector of tokens, applying the line-ownership
+   whitespace rule. Throws ex-info {:reason :syntax :line n} on unterminated
+   delimiters."
+  [s]
+  (apply-ownership (scan s)))
