@@ -1,6 +1,6 @@
 # frame
 
-A basic let-go CLI application template.
+A declarative project templater: scaffold new projects from a git or local template with a tiny Liquid-like template engine, exact whitespace control, and an interactive question flow.
 
 ## Development
 

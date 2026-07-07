@@ -164,16 +164,17 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 - Modify: `lgx.edn`
 - Modify: `README.md`
 
-- [ ] **Step 1: Add tiny-tui to deps**
+- [x] **Step 1: Add tiny-tui to deps**
   In `lgx.edn` `:deps`, add `tiny-tui {:git/url "https://github.com/abogoyavlensky/tiny-tui" :git/tag <latest tag>}` (check latest with `git ls-remote --tags https://github.com/abogoyavlensky/tiny-tui`). Run `lgx install`.
+  > Deviation: latest tag is `v0.1.3`.
 
-- [ ] **Step 2: Update README intro**
+- [x] **Step 2: Update README intro**
   Replace the template description line with one sentence: frame is a declarative project templater; keep the development commands section.
 
-- [ ] **Step 3: Verify project runs**
+- [x] **Step 3: Verify project runs**
   Run: `lgx test` — Expected: existing greet test passes.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "chore: add tiny-tui dependency"`
 
 ### Task 2: Filters
