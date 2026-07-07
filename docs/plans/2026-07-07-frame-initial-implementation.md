@@ -355,7 +355,7 @@ Dependency order: filters → lexer → parser → render (engine, pure) ; glob,
 
 - [x] **Step 3: Implement**
   Mirror lgx `cache.lg`/`new.lg` (read them: `/Users/andrew/Projects/lgx/lgx/cache.lg`, `new.lg`): `git ls-remote <url> HEAD` for the sha, `git clone --depth 1` + `git checkout <sha>` into `$FRAME_HOME/templates/<host>/<owner>/<repo>/<sha>` (`FRAME_HOME` default `~/.frame`), reuse when the dir exists. Errors carry `:stderr` in `ex-data`. `parse-git-url` handles `https://host/owner/repo` (strip trailing `.git`).
-  > Deviation: shallow `--depth 1` clone's worktree IS the resolved default-branch HEAD, so no explicit `git checkout <sha>` is needed; `.git` is stripped and the worktree moved into place atomically.
+  > Deviation: full `git clone` + `git checkout <sha>` (mirrors lgx's `clone-sha!`) rather than `--depth 1`; pinning to the resolved sha keeps the cache content-addressed even if the remote HEAD advances mid-resolution (codex review finding). `.git` is stripped and the worktree moved into place atomically.
 
 - [x] **Step 4: Run tests + manual git check**
   Run: `lgx test test/frame/source_test.lg` — Expected: PASS.

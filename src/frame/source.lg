@@ -83,13 +83,16 @@
     (str (frame-home) "/templates/" host "/" owner "/" repo "/" sha)))
 
 (defn- clone-sha!
-  "Shallow-clone url into dest via a tmp sibling, then finalize atomically.
-   The depth-1 clone's worktree is the default-branch HEAD, i.e. sha."
-  [url dest]
+  "Clone url into dest via a tmp sibling and check out the exact sha, then
+   finalize atomically. Pinning to sha keeps the cache content-addressed even
+   if the remote HEAD advances between ls-remote and here."
+  [url sha dest]
   (let [tmp (str dest ".tmp." (rand-int 1000000))]
     (mkdir (parent-dir dest))
-    (git! ["clone" "--quiet" "--depth" "1" url tmp]
+    (git! ["clone" "--quiet" url tmp]
           (str "git clone failed: " url))
+    (git! ["-C" tmp "checkout" "--quiet" sha]
+          (str "git checkout failed: " sha))
     (let [r (os/sh "rm" "-rf" (str tmp "/.git"))]
       (when-not (zero? (:exit r))
         (source-error "failed to remove .git from clone" {:stderr (:err r)})))
@@ -121,7 +124,7 @@
     (let [sha (resolve-head-sha! s)
           dir (template-dir s sha)]
       (when-not (file-exists? dir)
-        (clone-sha! s dir))
+        (clone-sha! s sha dir))
       dir)
     (let [abs (absolutize s)]
       (when-not (file-exists? abs)
