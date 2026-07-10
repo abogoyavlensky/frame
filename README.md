@@ -54,7 +54,7 @@ frame new --defaults --dir build/out ./my-template my-app
 frame new https://github.com/owner/repo my-app
 ```
 
-On success `frame` prints the created-file count, the target directory, a summary of every variable with the value that was used, and the next step. A resolution, configuration, or generation error prints `frame: <message>` and exits 1. Cancelling a prompt exits 1 and writes nothing. Invalid command-line syntax (an unknown option or a missing `<source>`) is reported by the argument parser and exits 2.
+On success `frame` prints the created-file count, the target directory, a summary of the declared template variables with the values that were used, and the next step. A resolution, configuration, or generation error prints `frame: <message>` and exits 1. Cancelling a prompt exits 1 and writes nothing. Invalid command-line syntax (an unknown option or a missing `<source>`) is reported by the argument parser and exits 2.
 
 ## Writing a template
 
