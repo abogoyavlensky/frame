@@ -11,6 +11,8 @@
 
 (def ^:private valid-types #{:string :enum :boolean})
 
+(def ^:private reserved-var-keys #{:project-name :now-date :now-year})
+
 (defn- config-error [msg data]
   (throw (ex-info msg (assoc data :reason :config))))
 
@@ -20,8 +22,8 @@
   (let [k (:key v)]
     (when-not (keyword? k)
       (config-error "each var needs a keyword :key" {:var v}))
-    (when (= k :project-name)
-      (config-error ":project-name is reserved and cannot be declared in :vars"
+    (when (contains? reserved-var-keys k)
+      (config-error (str k " is reserved and cannot be declared in :vars")
                     {:var k}))
     (when-not (string? (:prompt v))
       (config-error (str "var " k " needs a string :prompt") {:var k}))

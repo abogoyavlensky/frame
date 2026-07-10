@@ -114,3 +114,13 @@
                              :prompt "P"
                              :type :string}]})]
     (is (= :config (:reason (:error r))))))
+
+(deftest reserved-now-keys-error
+  (let [r (read-cfg {:vars [{:key :now-date
+                             :prompt "P"
+                             :type :string}]})]
+    (is (= :config (:reason (:error r)))))
+  (let [r (read-cfg {:vars [{:key :now-year
+                             :prompt "P"
+                             :type :string}]})]
+    (is (= :config (:reason (:error r))))))

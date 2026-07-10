@@ -42,6 +42,10 @@
 (deftest project-name-var-flag-rejected
   (is (= :var (:reason (threw #(prompt/parse-var-flags ["project-name=x"]))))))
 
+(deftest now-var-flags-rejected
+  (is (= :var (:reason (threw #(prompt/parse-var-flags ["now-date=x"])))))
+  (is (= :var (:reason (threw #(prompt/parse-var-flags ["now-year=x"]))))))
+
 ;; ---------------------------------------------------------------------------
 ;; resolve-answers (defaults mode)
 ;; ---------------------------------------------------------------------------

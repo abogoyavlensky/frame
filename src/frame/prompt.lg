@@ -18,10 +18,12 @@
 ;; --var flag parsing
 ;; ---------------------------------------------------------------------------
 
+(def ^:private reserved-var-keys #{"project-name" "now-date" "now-year"})
+
 (defn parse-var-flags
   "Parse [\"key=value\" ...] into {\"key\" \"value\"}. Splits on the first `=`
-   (values may contain more). Malformed entries and `project-name=...` throw
-   ex-info {:reason :var}."
+   (values may contain more). Malformed entries and reserved keys
+   (`project-name`, `now-date`, `now-year`) throw ex-info {:reason :var}."
   [flags]
   (reduce
     (fn [acc flag]
@@ -32,8 +34,10 @@
               v (subs flag (inc i))]
           (when (str/blank? k)
             (var-error (str "invalid --var (empty key): " flag) {:flag flag}))
-          (when (= k "project-name")
-            (var-error "project-name cannot be set with --var; pass it as the positional name argument"
+          (when (contains? reserved-var-keys k)
+            (var-error (if (= k "project-name")
+                         "project-name cannot be set with --var; pass it as the positional name argument"
+                         (str k " is a built-in variable and cannot be set with --var"))
                        {:key k}))
           (assoc acc k v))))
     {}
