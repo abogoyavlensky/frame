@@ -1,0 +1,45 @@
+(ns frame.new-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.new :as new]))
+
+;; ---------------------------------------------------------------------------
+;; var-summary-lines: declared vars + final answers -> printable lines
+;; ---------------------------------------------------------------------------
+
+(def ^:private demo-vars
+  [{:key :db :prompt "Database" :type :enum
+    :options ["sqlite" "postgres"] :default "sqlite"}
+   {:key :auth :prompt "Include authentication?" :type :boolean :default true}
+   {:key :author :prompt "Author name" :type :string :default ""}])
+
+(deftest summary-mixed-types-in-config-order
+  (is (= ["Variables:"
+          "  db: postgres"
+          "  auth: false"
+          "  author: Jane"]
+         (new/var-summary-lines demo-vars
+                                {"db" "postgres"
+                                 "auth" false
+                                 "author" "Jane"}))))
+
+(deftest summary-empty-vars-yields-no-lines
+  (is (= [] (new/var-summary-lines [] {"db" "postgres"}))))
+
+(deftest summary-ignores-built-ins-and-computed
+  (is (= ["Variables:"
+          "  db: sqlite"
+          "  auth: true"
+          "  author: Jane"]
+         (new/var-summary-lines demo-vars
+                                {"db" "sqlite"
+                                 "auth" true
+                                 "author" "Jane"
+                                 "project-name" "demo-app"
+                                 "now-date" "2026-07-10"
+                                 "now-year" "2026"
+                                 "top-ns" "demo_app"}))))
+
+(deftest summary-empty-string-value
+  (is (= ["Variables:"
+          "  author: "]
+         (new/var-summary-lines [(nth demo-vars 2)] {"author" ""}))))

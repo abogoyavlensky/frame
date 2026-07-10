@@ -45,9 +45,28 @@
     defaults? (cli-error "a project name is required with --defaults (pass it as the positional argument)")
     :else (prompt/ask-project-name!)))
 
-(defn- print-summary [n project-name target]
+(defn var-summary-lines
+  "Lines listing each declared var with its final answer, in config order:
+   [\"Variables:\" \"  <key>: <value>\" ...], or [] when there are no vars.
+   Built-ins and computed values in `answers` are not \"picked\", so they are
+   left out."
+  [vars answers]
+  (if (empty? vars)
+    []
+    (vec (cons "Variables:"
+               (map (fn [v]
+                      (let [skey (name (:key v))]
+                        (str "  " skey ": " (get answers skey))))
+                    vars)))))
+
+(defn- print-summary [n project-name target cfg answers]
   (println (str "Created " project-name " (" n
                 (if (= n 1) " file" " files") ") at " target))
+  (let [lines (var-summary-lines (:vars cfg) answers)]
+    (when (seq lines)
+      (println)
+      (doseq [line lines]
+        (println line))))
   (println)
   (println "Next steps:")
   (println (str "  cd " target)))
@@ -78,7 +97,7 @@
               (os/exit 1) ;; cancelled at a var prompt
               (let [final (prompt/compute-vars cfg (assoc answers "project-name" project-name))
                     n (generate/generate! template-dir target final cfg)]
-                (print-summary n project-name target)))))))))
+                (print-summary n project-name target cfg final)))))))))
 
 (defn cmd-new!
   "tiny-cli handler for `frame new`. Catches all errors and reports them
