@@ -42,6 +42,20 @@
 (deftest project-name-var-flag-rejected
   (is (= :var (:reason (threw #(prompt/parse-var-flags ["project-name=x"]))))))
 
+(deftest string-validate-applies-to-non-interactive-answers
+  (let [c {:vars [{:key :author
+                   :prompt "Author"
+                   :type :string
+                   :default ""
+                   :validate {:pattern "^.+$"
+                              :msg "Author name cannot be empty"}}]}]
+    ;; --var value violating the pattern is rejected
+    (is (= :var (:reason (threw #(prompt/resolve-answers c {"author" ""} {:defaults? true})))))
+    ;; defaults mode validates the default too
+    (is (= :var (:reason (threw #(prompt/resolve-answers c {} {:defaults? true})))))
+    ;; a conforming value passes
+    (is (= {"author" "Ann"} (prompt/resolve-answers c {"author" "Ann"} {:defaults? true})))))
+
 (deftest now-var-flags-rejected
   (is (= :var (:reason (threw #(prompt/parse-var-flags ["now-date=x"])))))
   (is (= :var (:reason (threw #(prompt/parse-var-flags ["now-year=x"]))))))

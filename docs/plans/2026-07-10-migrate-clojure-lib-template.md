@@ -227,46 +227,50 @@ match. `developer` parity relies on frame's `capitalize` matching Clojure's
 - Create: `frame.edn` (exact content in Design above)
 - Create: `template/**`
 
-- [ ] **Step 1: Confirm branch**
+> Deviation: removed untracked `.clj-kondo/.cache/**` artifacts from `template/` and `resources/.../root/` — they are git-ignored local cache, not published template content, and would have broken parity. Codex checkpoint fix: username `:validate` tightened to a GitHub-username pattern. Codex also flagged pre-existing template-content issues (CI fails on outdated pins; `bb check` depends on mutating `fmt`/`outdated`) — out of scope, identical in the deps-new copy; surfaced to the user as follow-ups.
+
+- [x] **Step 1: Confirm branch**
   Run: `git -C /Users/andrew/Projects/clojure-lib-template branch --show-current`
   Expected: `migrate-to-frame`.
 
-- [ ] **Step 2: Write `frame.edn`**
+- [x] **Step 2: Write `frame.edn`**
   Exact content from the Design section.
 
-- [ ] **Step 3: Copy `root/` into `template/`**
+- [x] **Step 3: Copy `root/` into `template/`**
   Run: `cp -a resources/io/github/abogoyavlensky/clojure_lib_template/root/ template/`
   (from the template repo root). Verify dotfiles arrived:
   `ls -A template` shows `.github`, `.clj-kondo`, `.gitignore`, `.mise.toml`, etc.
 
-- [ ] **Step 4: Add templated src/ and test/ dirs**
+- [x] **Step 4: Add templated src/ and test/ dirs**
   Create `template/src/{{ project-name | snake_case }}/core.clj` from
   `resources/.../src/core.clj` and
   `template/test/{{ project-name | snake_case }}/core_test.clj` from
   `resources/.../test/core_test.clj` (directory names contain the literal tag text).
 
-- [ ] **Step 5: Rewrite tags**
+- [x] **Step 5: Rewrite tags**
   Apply the per-file rewrite table from the Design section (LICENSE, CHANGELOG.md,
   deps.edn, README.md, dev/user.clj, core.clj, core_test.clj). Do not touch
   `template/.github/**`. Then verify no deps-new tags remain outside `.github`:
   Run: `grep -rn '{{' template | grep -v '.github' | grep -vE '\{\{ (project-name|name|username|developer|now-date|now-year)( \| [a-z_]+)* \}\}'`
   Expected: no output.
 
-- [ ] **Step 6: Confirm fallback intact**
+- [x] **Step 6: Confirm fallback intact**
   Run: `git status --short` — only `frame.edn` and `template/` are new; nothing
   deleted or modified except (later) README. Run `bb test` — deps-new template
   tests still PASS.
 
-- [ ] **Step 7: Commit** (template repo, `migrate-to-frame`)
+- [x] **Step 7: Commit** (template repo, `migrate-to-frame`)
   `git commit -m "feat: add frame template alongside deps-new"`
 
 ### Task 4: verification — byte-identical output
 
-- [ ] **Step 1: Build frame**
+> Deviation: deps-new derives `developer` from the OS user (`$USER`, capitalized), not the scm username as the design assumed. `developer` is now a prompted `:string` var in `frame.edn` (better for a public template than a machine-dependent value); verification passes `--var developer=Agent` to match this machine's deps-new output. Both name variants verified byte-identical.
+
+- [x] **Step 1: Build frame**
   Run in frame repo: `lgx build`
   Expected: `bin/frame` produced.
 
-- [ ] **Step 2: Generate both, hyphenated name**
+- [x] **Step 2: Generate both, hyphenated name**
   Run the verification commands from the Design section (deps-new via
   `clojure -X:local-new` in the template repo, frame via `bin/frame new --defaults
   --var username=abogoyavlensky` in the frame repo), then
@@ -275,11 +279,11 @@ match. `developer` parity relies on frame's `capitalize` matching Clojure's
   is at fault) and re-run until clean. Also compare tree shape:
   `(cd "$OUT/deps-new-out" && find . | sort) > a; (cd "$OUT/frame-out" && find . | sort) > b; diff a b`.
 
-- [ ] **Step 3: Generate both, plain name**
+- [x] **Step 3: Generate both, plain name**
   Repeat Step 2 with name `mylib` in a fresh temp dir.
   Expected: no diff.
 
-- [ ] **Step 4: Commit any fixes**
+- [x] **Step 4: Commit any fixes**
   If Step 2/3 required template fixes, commit them in the template repo:
   `git commit -m "fix: match deps-new output exactly"`.
 

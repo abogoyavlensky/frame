@@ -65,11 +65,18 @@
                  {:key (:key var)}))
     v))
 
+(defn- validate-string [var s]
+  (let [v (:validate var)]
+    (when (and v (:pattern v) (nil? (re-matches (re-pattern (:pattern v)) s)))
+      (var-error (str "var " (:key var) ": " (or (:msg v) "invalid value"))
+                 {:key (:key var)}))
+    s))
+
 (defn- coerce-answer [var raw]
   (case (:type var)
     :boolean (coerce-boolean var raw)
     :enum (validate-enum var raw)
-    :string (if (nil? raw) "" (str raw))))
+    :string (validate-string var (if (nil? raw) "" (str raw)))))
 
 (defn- check-unknown-keys! [config cli-vars]
   (let [known (set (map (fn [v] (name (:key v))) (:vars config)))]
