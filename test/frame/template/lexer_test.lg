@@ -1,6 +1,7 @@
 (ns frame.template.lexer-test
   (:require [clojure.test :refer [deftest is]]
-            [frame.template.lexer :as lex]))
+            [frame.template.lexer :as lex]
+            [string :as str]))
 
 ;; ---------------------------------------------------------------------------
 ;; Basic tokenization
@@ -193,11 +194,13 @@
          (lex/tokenize "{% raw %}{{ x }}{% endraw %}" {:mode :inline}))))
 
 (deftest unclosed-raw-throws-with-raw-tag-line
-  (let [data (try (lex/tokenize "a\nb\n{% raw %}{{ x }}")
-                  :no-throw
-                  (catch e (ex-data e)))]
-    (is (= :syntax (:reason data)))
-    (is (= 3 (:line data)))))
+  (let [r (try (lex/tokenize "a\nb\n{% raw %}{{ x }}")
+               :no-throw
+               (catch e {:data (ex-data e)
+                         :msg (ex-message e)}))]
+    (is (= :syntax (:reason (:data r))))
+    (is (= 3 (:line (:data r))))
+    (is (str/includes? (:msg r) "unclosed 'raw' tag"))))
 
 ;; ---------------------------------------------------------------------------
 ;; Syntax errors

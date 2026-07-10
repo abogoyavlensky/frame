@@ -341,6 +341,13 @@
               (let [{:keys [node pos]} (parse-case tokens pos)]
                 (recur pos (conj nodes node)))
 
+              ;; A paired endraw never reaches the parser (the lexer consumes
+              ;; it); seeing one here means there was no opening raw.
+              (= kw "endraw")
+              (throw (ex-info "'endraw' without matching 'raw'"
+                              {:reason :syntax
+                               :line (:line tok)}))
+
               (contains? block-keywords kw)
               (throw (ex-info (str "unexpected '" kw "' tag")
                               {:reason :syntax

@@ -1,7 +1,8 @@
 (ns frame.template.parser-test
   (:require [clojure.test :refer [deftest is]]
             [frame.template.lexer :as lex]
-            [frame.template.parser :as p]))
+            [frame.template.parser :as p]
+            [string :as str]))
 
 (defn- parse-str [s]
   (p/parse (lex/tokenize s)))
@@ -246,3 +247,11 @@
 (deftest unknown-tag-word-throws
   (let [data (syntax-error #(parse-str "{% frobnicate x %}"))]
     (is (= :syntax (:reason data)))))
+
+(deftest endraw-without-raw-throws
+  (let [r (try (parse-str "text {% endraw %} more")
+               :no-throw
+               (catch e {:data (ex-data e)
+                         :msg (ex-message e)}))]
+    (is (= :syntax (:reason (:data r))))
+    (is (str/includes? (:msg r) "'endraw' without matching 'raw'"))))
