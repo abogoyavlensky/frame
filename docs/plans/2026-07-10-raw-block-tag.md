@@ -1,6 +1,8 @@
 # Raw Block Tag Implementation Plan
 
-> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status: COMPLETED** (2026-07-10) — see summary at the end.
+
+> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add a `{% raw %}...{% endraw %}` block tag that emits its content verbatim, so templates can contain other tools' template syntax (e.g. GitHub Actions `${{ secrets.X }}`) without frame trying to render it.
 
@@ -98,7 +100,7 @@ TDD against the existing test layout: lexer behavior in
 - Modify: `src/frame/template/lexer.lg`
 - Test: `test/frame/template/lexer_test.lg`
 
-- [ ] **Step 1: Write failing lexer tests**
+- [x] **Step 1: Write failing lexer tests**
   Following the existing test style in `lexer_test.lg`:
   - `{% raw %}{{ x }} and {% if y %}{% endraw %}` tokenizes to exactly one
     `:text` token with value `{{ x }} and {% if y %}` (markers dropped, nothing
@@ -117,11 +119,11 @@ TDD against the existing test layout: lexer behavior in
   - `:inline` mode: `(tokenize s {:mode :inline})` on `"{% raw %}{{ x }}{% endraw %}"`
     yields one text token `{{ x }}` (markers dropped, no ownership pass).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: new assertions FAIL (`unknown tag` / wrong tokens).
 
-- [ ] **Step 3: Implement in lexer.lg**
+- [x] **Step 3: Implement in lexer.lg**
   In `scan`, after computing `inner` for a `:tag` token: if `(= inner "raw")`,
   enter the endraw search described in the Design (loop with `str/index-of` on
   `"{%"` / `"%}"`, trimmed-inner comparison, advance-by-2 on non-match). Emit the
@@ -131,11 +133,11 @@ TDD against the existing test layout: lexer behavior in
   filter out `:marker` tokens after the ownership pass (default mode) and after
   `scan` (`:inline` mode).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: raw block tag in template lexer"`
 
 ### Task 2: parser — explicit stray-endraw error
@@ -144,24 +146,24 @@ TDD against the existing test layout: lexer behavior in
 - Modify: `src/frame/template/parser.lg`
 - Test: `test/frame/template/parser_test.lg`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
   Parsing tokens of `"text {% endraw %} more"` throws `{:reason :syntax}` with
   message containing `'endraw' without matching 'raw'`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `lgx test`
   Expected: FAIL (current message is `unknown tag: 'endraw'`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In `parse-body`'s tag `cond`, before the `block-keywords` / unknown-tag
   branches, add: `(= kw "endraw")` → throw `{:reason :syntax :line (:line tok)}`
   with message `'endraw' without matching 'raw'`.
 
-- [ ] **Step 4: Run tests, full check**
+- [x] **Step 4: Run tests, full check**
   Run: `lgx check`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: clear error for endraw without raw"`
 
 ### Task 3: render + generate coverage
@@ -169,7 +171,7 @@ TDD against the existing test layout: lexer behavior in
 **Files:**
 - Test: `test/frame/template/render_test.lg`, `test/frame/generate_test.lg`
 
-- [ ] **Step 1: Write render tests**
+- [x] **Step 1: Write render tests**
   In `render_test.lg` (existing style, via `render-string`):
   - `{% raw %}${{ secrets.TOKEN }}{% endraw %}` with empty vars renders
     `${{ secrets.TOKEN }}` — no unresolved-var error.
@@ -178,17 +180,17 @@ TDD against the existing test layout: lexer behavior in
   - Standalone raw/endraw lines leave no phantom blank lines (multi-line
     fixture mirroring the whitespace-rule tests already in the file).
 
-- [ ] **Step 2: Write one end-to-end generate test**
+- [x] **Step 2: Write one end-to-end generate test**
   In `generate_test.lg`, using the existing temp-template pattern
   (`tmp-dir`, `spit` a `frame.edn` + `template/` file): a template file whose
   content contains a raw block with `{{ not-a-var }}` generates successfully and
   the output file contains the literal text.
 
-- [ ] **Step 3: Run full check**
+- [x] **Step 3: Run full check**
   Run: `lgx check`
   Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "test: render and generation coverage for raw blocks"`
 
 ### Task 4: README documentation
@@ -196,12 +198,36 @@ TDD against the existing test layout: lexer behavior in
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Add "Raw blocks" subsection**
+- [x] **Step 1: Add "Raw blocks" subsection**
   Under "Template syntax", after the case-blocks section: what `{% raw %}` does,
   the GitHub Actions `${{ secrets.X }}` motivating example, the whitespace rule
   applying to the marker tags, the no-nesting/first-endraw-wins limitation, and
   the relation to `:raw` globs (globs protect whole files verbatim; the tag
   protects spans inside an otherwise-rendered file). Use /writing-clearly.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -m "docs: raw block tag"`
+
+---
+
+## Completion Summary (2026-07-10)
+
+**Implemented** across 4 commits (`2cb92bf`, `111d193`, then test coverage and
+docs). `{% raw %}...{% endraw %}` consumes its span verbatim in the lexer's
+scan; the marker tags take part in the line-ownership whitespace rule and are
+dropped before parsing; a stray `endraw` gets an explicit parser error. Full
+suite green (128 tests, 234 assertions); end-to-end verified with the built
+binary generating a GitHub Actions workflow that mixes `{{ project-name }}`
+with `${{ secrets.* }}` — the raw span survives byte-exact and the marker
+lines leave no trace.
+
+**Deviations:** none of substance. Two lexer test expectations were corrected
+during TDD to match the engine's existing convention that a text token's
+`:line` is its pre-strip start line. Codex plan-review advisories folded in
+(error-message assertions in lexer/parser tests). All four per-task codex
+reviews came back clean with no findings.
+
+**What the plan could have specified better:** the text-token `:line`
+convention after whitespace stripping — the plan's example token streams
+implied post-strip line numbers; the engine (correctly) reports pre-strip
+start lines.
