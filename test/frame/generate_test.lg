@@ -85,6 +85,24 @@
       (is (not (str/includes? (get got "README.md") "Authentication is included."))))))
 
 ;; ---------------------------------------------------------------------------
+;; Raw blocks survive generation verbatim
+;; ---------------------------------------------------------------------------
+
+(deftest raw-block-generates-verbatim
+  (let [tpl (tmp-dir)
+        target (tmp-dir)]
+    (mkdir (str tpl "/template"))
+    (spit (str tpl "/frame.edn") (pr-str {:vars []}))
+    (spit (str tpl "/template/ci.yaml")
+          "name: {{ project-name }}\n{% raw %}\ntoken: ${{ secrets.TOKEN }}\n{% endraw %}\n")
+    (let [cfg (config/read-config tpl)]
+      (generate/generate! tpl target {"project-name" "demo"} cfg)
+      (let [got (tree-map target)]
+        (os/sh "rm" "-rf" tpl target)
+        (is (= "name: demo\ntoken: ${{ secrets.TOKEN }}\n"
+               (get got "ci.yaml")))))))
+
+;; ---------------------------------------------------------------------------
 ;; Collision detection (nothing written)
 ;; ---------------------------------------------------------------------------
 

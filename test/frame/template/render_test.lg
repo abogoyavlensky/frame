@@ -110,6 +110,23 @@
   (is (= "abc" (r/render-string "a{% if x %}b{% endif %}c" {"x" true})))
   (is (= "ac" (r/render-string "a{% if x %}b{% endif %}c" {"x" false}))))
 
+;; ---------------------------------------------------------------------------
+;; Raw blocks
+;; ---------------------------------------------------------------------------
+
+(deftest raw-block-renders-foreign-syntax-verbatim
+  (is (= "${{ secrets.TOKEN }}"
+         (r/render-string "{% raw %}${{ secrets.TOKEN }}{% endraw %}" {}))))
+
+(deftest raw-block-alongside-live-tags
+  (is (= "Hi Ann {{ name }}"
+         (r/render-string "Hi {{ name }} {% raw %}{{ name }}{% endraw %}"
+                          {"name" "Ann"}))))
+
+(deftest raw-markers-own-their-lines
+  (let [t "line1\n{% raw %}\n{{ kept }}\n{% endraw %}\nline2\n"]
+    (is (= "line1\n{{ kept }}\nline2\n" (r/render-string t {})))))
+
 (deftest nested-if-inside-case
   (let [t (str "{% case env %}\n"
                "{% when prod %}\n"
