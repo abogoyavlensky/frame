@@ -156,17 +156,17 @@ match. `developer` parity relies on frame's `capitalize` matching Clojure's
 - Modify: `src/frame/config.lg`, `src/frame/prompt.lg`
 - Test: `test/frame/config_test.lg`, `test/frame/prompt_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   In `config_test.lg`: a config declaring `{:key :now-date ...}` in `:vars` raises a
   config error naming the reserved key (mirror the existing `:project-name` reserved
   test). Same for `:now-year`. In `prompt_test.lg`: `parse-cli-vars` rejects
   `now-date=x` and `now-year=x` (mirror the existing `project-name` rejection test).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: the new assertions FAIL (no error raised yet).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In `config.lg` `validate-var` (src/frame/config.lg:23) replace the `:project-name`
   equality check with membership in a reserved set `#{:project-name :now-date :now-year}`;
   error message: `"<key> is reserved and cannot be declared in :vars"`. In
@@ -175,11 +175,11 @@ match. `developer` parity relies on frame's `capitalize` matching Clojure's
   (keep the specific project-name wording for `project-name`, or unify — follow
   existing message style).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit** (frame repo, `master`)
+- [x] **Step 5: Commit** (frame repo, `master`)
   `git commit -m "feat: reserve now-date/now-year as built-in variable names"`
 
 ### Task 2: frame — inject `now-date` / `now-year` values

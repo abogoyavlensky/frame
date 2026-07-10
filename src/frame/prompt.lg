@@ -106,17 +106,26 @@
 ;; Computed vars (single pass; rendered against the collected answers)
 ;; ---------------------------------------------------------------------------
 
+(defn- built-in-vars
+  "Always-available variables, merged over the answers so they cannot be
+   shadowed. `now-date` matches deps-new's yyyy-MM-dd format."
+  []
+  {"now-date" (.Format (now) "2006-01-02")
+   "now-year" (.Format (now) "2006")})
+
 (defn compute-vars
-  "Render each :computed template against `answers` and merge the results in
-   (string-keyed). Rendering against the original answers means a computed var
-   cannot reference another computed var; doing so raises an unresolved-var
-   error from the renderer."
+  "Merge the built-in variables into `answers`, then render each :computed
+   template against the result and merge those in too (string-keyed).
+   Rendering against the original answers means a computed var cannot
+   reference another computed var; doing so raises an unresolved-var error
+   from the renderer."
   [config answers]
-  (reduce
-    (fn [acc [k tmpl]]
-      (assoc acc (name k) (render/render-string tmpl answers)))
-    answers
-    (:computed config)))
+  (let [answers (merge answers (built-in-vars))]
+    (reduce
+      (fn [acc [k tmpl]]
+        (assoc acc (name k) (render/render-string tmpl answers)))
+      answers
+      (:computed config))))
 
 ;; ---------------------------------------------------------------------------
 ;; Interactive prompting (not unit-tested; manual smoke in Task 11)

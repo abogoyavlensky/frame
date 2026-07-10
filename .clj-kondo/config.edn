@@ -15,7 +15,7 @@
   {:exclude [;; catch binding symbols, parsed as class names
              e _
              ;; let-go builtins / dynamic vars
-             mkdir delete-file file-exists? write! slurp spit
+             mkdir delete-file file-exists? write! slurp spit now
              *compiling-aot* *command-line-args*]}
   ;; let-go builtin namespaces, available without require
   :unresolved-namespace {:exclude [os edn]}}

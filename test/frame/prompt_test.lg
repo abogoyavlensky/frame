@@ -94,8 +94,16 @@
 
 (deftest computes-vars-into-answers
   (is (= {"project-name" "my-app"
-          "top-ns" "my_app"}
+          "top-ns" "my_app"
+          "now-date" (.Format (now) "2006-01-02")
+          "now-year" (.Format (now) "2006")}
          (prompt/compute-vars cfg {"project-name" "my-app"}))))
+
+(deftest built-in-now-vars-usable-in-computed
+  (let [c {:computed {:copyright "{{ now-year }} {{ author }}"}}
+        r (prompt/compute-vars c {"author" "Ann"})]
+    (is (= (str (.Format (now) "2006") " Ann") (get r "copyright")))
+    (is (= (.Format (now) "2006-01-02") (get r "now-date")))))
 
 (deftest computed-referencing-another-computed-errors
   ;; Single pass: a computed var cannot see another computed var.

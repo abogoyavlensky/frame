@@ -86,6 +86,7 @@ Everything under `template/` is copied to the output. File and directory names a
   - `:enum` renders a picker. It needs a non-empty `:options` vector; `:default` must be one of them.
   - `:boolean` renders a yes/no choice.
 - **`project-name`** is a built-in first variable. You never declare it. It comes from the positional `[name]` argument or its own prompt, and it is available in every template and computed value.
+- **`now-date`** and **`now-year`** are built-in variables holding the generation date (`2026-07-10`) and year (`2026`). Like `project-name`, they are always available, and all three names are reserved: declaring them in `:vars` or setting them with `--var` is an error.
 - **`:computed`** maps variable names to templates rendered against the answers after all questions. Computed values run in a single pass, so one computed value cannot reference another.
 - **`:raw`** is a list of glob patterns (relative to `:root`) copied verbatim, without content rendering. `*` matches within a path segment; `**` matches across segments. Any file with a null byte in its first 8000 bytes is also copied verbatim. Raw and binary files still get their *paths* rendered.
 
