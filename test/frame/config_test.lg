@@ -123,4 +123,9 @@
   (let [r (read-cfg {:vars [{:key :now-year
                              :prompt "P"
                              :type :string}]})]
+    (is (= :config (:reason (:error r)))))
+  ;; namespaced keys normalize to the same answer name and are also rejected
+  (let [r (read-cfg {:vars [{:key :custom/now-date
+                             :prompt "P"
+                             :type :string}]})]
     (is (= :config (:reason (:error r))))))

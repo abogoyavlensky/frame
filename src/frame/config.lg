@@ -11,7 +11,7 @@
 
 (def ^:private valid-types #{:string :enum :boolean})
 
-(def ^:private reserved-var-keys #{:project-name :now-date :now-year})
+(def ^:private reserved-var-names #{"project-name" "now-date" "now-year"})
 
 (defn- config-error [msg data]
   (throw (ex-info msg (assoc data :reason :config))))
@@ -22,7 +22,9 @@
   (let [k (:key v)]
     (when-not (keyword? k)
       (config-error "each var needs a keyword :key" {:var v}))
-    (when (contains? reserved-var-keys k)
+    ;; Answers are keyed by (name k), so a namespaced :x/now-date would
+    ;; collide with the built-in all the same — compare the normalized name.
+    (when (contains? reserved-var-names (name k))
       (config-error (str k " is reserved and cannot be declared in :vars")
                     {:var k}))
     (when-not (string? (:prompt v))
