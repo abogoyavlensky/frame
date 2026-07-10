@@ -188,7 +188,9 @@ match. `developer` parity relies on frame's `capitalize` matching Clojure's
 - Modify: `src/frame/new.lg`
 - Test: `test/frame/generate_test.lg` (or the test file that exercises `cmd-new` end-to-end — follow where `project-name` injection is covered)
 
-- [ ] **Step 1: Write failing test**
+> Deviation: injection lives in `prompt/compute-vars` (src/frame/prompt.lg), not `new.lg` — the testable single point every flow passes through; tested in `prompt_test.lg`. Also added `now` to the clj-kondo exclude list. Codex checkpoint fixes: normalized-name reserved check (Task 1), single-timestamp derivation (Task 2).
+
+- [x] **Step 1: Write failing test**
   End-to-end: a fixture template whose content renders `{{ now-year }}` and
   `{{ now-date }}` produces the current year/date. Compute expected values in the
   test with the same interop calls: `(.Format (now) "2006")` and
@@ -196,11 +198,11 @@ match. `developer` parity relies on frame's `capitalize` matching Clojure's
   below `cmd-new`, inject at the same level the test can reach — keep the injection
   in one obvious place.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `lgx test`
   Expected: FAIL with unresolved variable `now-year`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In `src/frame/new.lg` (the `cmd-new` pipeline, where `project-name` is assoc'd
   before `prompt/compute-vars`, src/frame/new.lg:79), add a small private helper
   returning the built-ins map:
@@ -208,15 +210,15 @@ match. `developer` parity relies on frame's `capitalize` matching Clojure's
   and merge it into the answers together with `project-name`. Built-ins are merged
   after user answers, so they always win.
 
-- [ ] **Step 4: Run tests + full check**
+- [x] **Step 4: Run tests + full check**
   Run: `lgx check`
   Expected: PASS (fmt, lint, tests).
 
-- [ ] **Step 5: Document in README**
+- [x] **Step 5: Document in README**
   In frame's `README.md`, extend the `project-name` built-in paragraph: `now-date`
   (`yyyy-MM-dd`) and `now-year` are always available and reserved. Use /writing-clearly.
 
-- [ ] **Step 6: Commit** (frame repo, `master`)
+- [x] **Step 6: Commit** (frame repo, `master`)
   `git commit -m "feat: built-in now-date and now-year variables"`
 
 ### Task 3: template repo — create `frame.edn` and `template/`
