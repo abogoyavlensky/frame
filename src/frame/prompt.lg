@@ -110,8 +110,9 @@
   "Always-available variables, merged over the answers so they cannot be
    shadowed. `now-date` matches deps-new's yyyy-MM-dd format."
   []
-  {"now-date" (.Format (now) "2006-01-02")
-   "now-year" (.Format (now) "2006")})
+  (let [t (now)]
+    {"now-date" (.Format t "2006-01-02")
+     "now-year" (.Format t "2006")}))
 
 (defn compute-vars
   "Merge the built-in variables into `answers`, then render each :computed
