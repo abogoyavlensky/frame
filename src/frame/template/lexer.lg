@@ -20,9 +20,32 @@
 ;; Phase 1: linear scan
 ;; ---------------------------------------------------------------------------
 
+(defn- find-endraw
+  "Find the `{% endraw %}` terminating a raw block, searching from `pos`.
+   Returns [open-idx after-close-idx]. On a non-matching `{%` the search
+   resumes just past it (not past its `%}`), so junk `{%` inside the block
+   cannot hide the real terminator. Throws ex-info
+   {:reason :syntax :line raw-line} when the input runs out."
+  [s pos raw-line]
+  (loop [sp pos]
+    (let [oi (str/index-of s "{%" sp)]
+      (when (nil? oi)
+        (throw (ex-info (str "unclosed 'raw' tag at line " raw-line)
+                        {:reason :syntax
+                         :line raw-line})))
+      (let [ci (str/index-of s "%}" (+ oi 2))]
+        (if (and (some? ci)
+                 (= "endraw" (str/trim (subs s (+ oi 2) ci))))
+          [oi (+ ci 2)]
+          (recur (+ oi 2)))))))
+
 (defn- scan
-  "Walk s, emitting text/output/tag tokens. Throws ex-info
-   {:reason :syntax :line n} on an unterminated {{ or {%."
+  "Walk s, emitting text/output/tag tokens. A `{% raw %}` tag switches to a
+   literal scan up to the next `{% endraw %}`: the span between them becomes a
+   single text token and both delimiter tags are emitted with :marker true
+   (consumed later by `tokenize`, after the line-ownership pass). Throws
+   ex-info {:reason :syntax :line n} on an unterminated {{ or {% and on an
+   unclosed raw block."
   [s]
   (let [len (count s)]
     (loop [pos 0
@@ -58,13 +81,37 @@
                                      " at line " line)
                                 {:reason :syntax
                                  :line line})))
-              (let [raw (subs s ni (+ close 2))
+              (let [src (subs s ni (+ close 2))
                     inner (str/trim (subs s (+ ni 2) close))]
-                (recur (+ close 2)
-                       (+ line (count-newlines raw))
-                       (conj tokens {:type ctype
-                                     :value inner
-                                     :line line}))))))))))
+                (if (and (= ctype :tag) (= inner "raw"))
+                  ;; Raw block: consume everything up to {% endraw %} verbatim.
+                  (let [line-after-open (+ line (count-newlines src))
+                        content-start (+ close 2)
+                        [end-oi end-after] (find-endraw s content-start line)
+                        content (subs s content-start end-oi)
+                        line-after-content (+ line-after-open (count-newlines content))
+                        endraw-src (subs s end-oi end-after)
+                        tokens (conj tokens {:type :tag
+                                             :value "raw"
+                                             :marker true
+                                             :line line})
+                        tokens (if (empty? content)
+                                 tokens
+                                 (conj tokens {:type :text
+                                               :value content
+                                               :line line-after-open}))
+                        tokens (conj tokens {:type :tag
+                                             :value "endraw"
+                                             :marker true
+                                             :line line-after-content})]
+                    (recur end-after
+                           (+ line-after-content (count-newlines endraw-src))
+                           tokens))
+                  (recur (+ close 2)
+                         (+ line (count-newlines src))
+                         (conj tokens {:type ctype
+                                       :value inner
+                                       :line line})))))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Phase 2: line-ownership
@@ -181,7 +228,10 @@
    {:reason :syntax :line n} on unterminated delimiters."
   ([s] (tokenize s {}))
   ([s opts]
-   (let [tokens (scan s)]
-     (if (= (:mode opts) :inline)
-       tokens
-       (apply-ownership tokens)))))
+   (let [tokens (scan s)
+         tokens (if (= (:mode opts) :inline)
+                  tokens
+                  (apply-ownership tokens))]
+     ;; Raw-block delimiters take part in line ownership like any tag, but
+     ;; carry no content of their own — drop them here.
+     (vec (remove :marker tokens)))))

@@ -126,6 +126,80 @@
          (lex/tokenize "a\n{{ x }}\n{% if y %}"))))
 
 ;; ---------------------------------------------------------------------------
+;; Raw blocks
+;; ---------------------------------------------------------------------------
+
+(deftest raw-protects-content-from-lexing
+  (is (= [{:type :text
+           :value "{{ x }} and {% if y %}"
+           :line 1}]
+         (lex/tokenize "{% raw %}{{ x }} and {% if y %}{% endraw %}"))))
+
+(deftest raw-endraw-spacing-variants
+  (is (= [{:type :text
+           :value "{{ a }}"
+           :line 1}]
+         (lex/tokenize "{%raw%}{{ a }}{%endraw%}")))
+  (is (= [{:type :text
+           :value "{{ a }}"
+           :line 1}]
+         (lex/tokenize "{% raw   %}{{ a }}{%  endraw  %}"))))
+
+(deftest raw-junk-open-delimiter-does-not-hide-endraw
+  (is (= [{:type :text
+           :value "a {% b "
+           :line 1}]
+         (lex/tokenize "{% raw %}a {% b {% endraw %}"))))
+
+(deftest raw-standalone-markers-own-their-lines
+  ;; Text-token :line values are pre-strip start lines, as elsewhere in the
+  ;; ownership rule (see tag-alone-on-line-owns-whitespace-and-newline).
+  (is (= [{:type :text
+           :value "A\n"
+           :line 1}
+          {:type :text
+           :value "{{ x }}\n"
+           :line 2}
+          {:type :text
+           :value "B\n"
+           :line 4}]
+         (lex/tokenize "A\n{% raw %}\n{{ x }}\n{% endraw %}\nB\n"))))
+
+(deftest raw-inline-markers-removed-in-place
+  (is (= [{:type :text
+           :value "a "
+           :line 1}
+          {:type :text
+           :value "{{ x }}"
+           :line 1}
+          {:type :text
+           :value " b"
+           :line 1}]
+         (lex/tokenize "a {% raw %}{{ x }}{% endraw %} b"))))
+
+(deftest raw-line-tracking-after-multiline-span
+  (is (= [{:type :text
+           :value "{{ a }}\n{{ b }}\n"
+           :line 1}
+          {:type :tag
+           :value "if y"
+           :line 5}]
+         (lex/tokenize "{% raw %}\n{{ a }}\n{{ b }}\n{% endraw %}\n{% if y %}"))))
+
+(deftest raw-inline-mode
+  (is (= [{:type :text
+           :value "{{ x }}"
+           :line 1}]
+         (lex/tokenize "{% raw %}{{ x }}{% endraw %}" {:mode :inline}))))
+
+(deftest unclosed-raw-throws-with-raw-tag-line
+  (let [data (try (lex/tokenize "a\nb\n{% raw %}{{ x }}")
+                  :no-throw
+                  (catch e (ex-data e)))]
+    (is (= :syntax (:reason data)))
+    (is (= 3 (:line data)))))
+
+;; ---------------------------------------------------------------------------
 ;; Syntax errors
 ;; ---------------------------------------------------------------------------
 
