@@ -1,5 +1,7 @@
 # Variable Summary After Project Creation Implementation Plan
 
+> **Status: COMPLETED** (2026-07-10) — see summary at the end.
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** After a successful `frame new`, print a `Variables:` block listing each declared template variable with the value that was actually used (from a prompt, `--var`, or a default).
@@ -56,42 +58,59 @@ So the implementation and tests agree exactly:
 - Modify: `src/frame/new.lg`
 - Test: `test/frame/new_test.lg`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   Create `test/frame/new_test.lg` (namespace `frame.new-test`, requiring `clojure.test` and `frame.new`, following the style of `test/frame/generate_test.lg`). Cases for `var-summary-lines`:
   - Mixed types and ordering: vars `[{:key :db :type :enum ...} {:key :auth :type :boolean ...} {:key :author :type :string ...}]` with answers `{"db" "postgres" "auth" false "author" "Jane"}` → `["Variables:" "  db: postgres" "  auth: false" "  author: Jane"]` (config order preserved, boolean rendered as `false`).
   - Empty vars: `(var-summary-lines [] {...})` → `[]`.
   - Extras ignored: answers containing `now-date`, `now-year`, `project-name`, and a computed key produce lines only for the declared vars.
   - Empty string value: answer `""` renders as `"  author: "`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — `var-summary-lines` unresolved in `frame.new`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In `src/frame/new.lg`, add public `var-summary-lines` per the shared shape above. Extend `print-summary` to `(print-summary n project-name target cfg final)`: after the `Created` line, when `(seq (:vars cfg))`, print a blank line then each summary line; keep the existing blank line + `Next steps:` tail unchanged. Update the call in `run*` accordingly.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS (all suites).
 
-- [ ] **Step 5: Commit**
-  `git commit -m "feat: print variable summary after project creation"`
+- [x] **Step 5: Commit**
+  `git commit -m "feat: print variable summary after project creation"` (c47fea4)
 
 ### Task 2: Verify end-to-end and finish
 
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Full checks**
+- [x] **Step 1: Full checks**
   Run: `lgx check`
   Expected: fmt, lint, and tests all pass.
+  > Deviation: the first `lgx check` after Task 1 failed on `cljfmt check` for the new test file (flagged by the Task 1 codex review); fixed with `lgx fmt` and committed as `style: format new_test fixture with cljfmt`.
 
-- [ ] **Step 2: Manual smoke**
+- [x] **Step 2: Manual smoke**
   Run: `lgx build && bin/frame new --defaults --dir "$(mktemp -d)/demo-app" test/frame/fixtures/demo-template demo-app`
   Expected: output shows the `Created …` line, then a `Variables:` block with the demo template's vars at their defaults, then `Next steps:`.
 
-- [ ] **Step 3: Update README output description**
+- [x] **Step 3: Update README output description**
   In `README.md`, the "On success `frame` prints…" sentence: mention the variable summary.
 
-- [ ] **Step 4: Commit**
-  `git commit -m "docs: mention variable summary in README"`
+- [x] **Step 4: Commit**
+  `git commit -m "docs: mention variable summary in README"` (685da03)
+
+---
+
+## Completion Summary (2026-07-10)
+
+**Implemented:** `frame new` now prints a `Variables:` block between the `Created …` line and `Next steps:`, listing each declared var (in `frame.edn` order) with the value actually used — from a prompt, `--var`, or a default. Zero-var templates keep the old output. The core is a public, unit-tested `var-summary-lines` in `frame.new`; built-ins, computed values, and `project-name` are excluded.
+
+**Commits:** `c47fea4` feature + tests, `db38c4f` cljfmt fixup, `685da03` README mention, `0cf7b1d` README wording fix.
+
+**Verification:** `lgx check` green (fmt, lint, 132 tests / 238 assertions); end-to-end smoke of `bin/frame new --defaults` (defaults shown) and with `--var db=postgres,auth=false` (overrides shown).
+
+**Issues / deviations:**
+- Task 1's codex review caught that the new test file failed `cljfmt check`; fixed with `lgx fmt` (`db38c4f`).
+- Task 2's codex review caught that the README claimed "every variable" while only declared vars are printed; wording scoped to declared variables (`0cf7b1d`).
+
+**What the plan could have specified better:** a "run `lgx fmt` before committing" reminder in the test-writing step — the repo's `check` gates on formatting, and new files won't be formatted by default.
