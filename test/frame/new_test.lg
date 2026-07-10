@@ -7,10 +7,19 @@
 ;; ---------------------------------------------------------------------------
 
 (def ^:private demo-vars
-  [{:key :db :prompt "Database" :type :enum
-    :options ["sqlite" "postgres"] :default "sqlite"}
-   {:key :auth :prompt "Include authentication?" :type :boolean :default true}
-   {:key :author :prompt "Author name" :type :string :default ""}])
+  [{:key :db
+    :prompt "Database"
+    :type :enum
+    :options ["sqlite" "postgres"]
+    :default "sqlite"}
+   {:key :auth
+    :prompt "Include authentication?"
+    :type :boolean
+    :default true}
+   {:key :author
+    :prompt "Author name"
+    :type :string
+    :default ""}])
 
 (deftest summary-mixed-types-in-config-order
   (is (= ["Variables:"
