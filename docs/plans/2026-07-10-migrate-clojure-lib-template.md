@@ -1,5 +1,7 @@
 # Migrate clojure-lib-template to Frame Implementation Plan
 
+> **Status: COMPLETED** (2026-07-10) — see summary at the end.
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Migrate the deps-new template at `/Users/andrew/Projects/clojure-lib-template` to frame, in place, keeping the deps-new files as a fallback — verified by frame and deps-new generating byte-identical projects.
@@ -292,11 +294,50 @@ match. `developer` parity relies on frame's `capitalize` matching Clojure's
 **Files:**
 - Modify: `/Users/andrew/Projects/clojure-lib-template/README.md`
 
-- [ ] **Step 1: Add "Create a project with frame" subsection**
+- [x] **Step 1: Add "Create a project with frame" subsection**
   Under Usage, alongside the deps-new instructions: build/install frame, then
   `frame new https://github.com/abogoyavlensky/clojure-lib-template my-lib`
   (interactive) or with `--defaults --var username=...`. Keep the deps-new
   instructions as-is (fallback). Use /writing-clearly.
 
-- [ ] **Step 2: Commit** (template repo, `migrate-to-frame`)
+- [x] **Step 2: Commit** (template repo, `migrate-to-frame`)
   `git commit -m "docs: frame usage instructions"`
+
+---
+
+## Completion Summary (2026-07-10)
+
+**Implemented.** deps-new and frame now generate byte-identical projects from
+`clojure-lib-template` (verified with `verify-lib` and `mylib`; `diff -r` empty
+for both, 16 files each). The deps-new files are untouched and `bb test` still
+passes, so the fallback works.
+
+**frame (master):** built-in `now-date`/`now-year` variables (injected in
+`compute-vars` from a single timestamp), reserved alongside `project-name` in
+`:vars` (normalized-name check, so namespaced variants are caught) and `--var`;
+string `:validate` patterns now also apply to `--var` and defaults-mode answers,
+not just interactive input; README documents the built-ins.
+
+**clojure-lib-template (migrate-to-frame):** `frame.edn` (vars `username`,
+`developer`, computed `name`, raw `.github/**`), `template/` mirroring the
+deps-new `root/` plus templated `src`/`test` dirs, README frame usage section.
+
+**Deviations (all recorded under their tasks):**
+- Built-in injection lives in `prompt/compute-vars`, not `new.lg` — the testable single point.
+- `developer` is a prompted var, not computed from `username`: deps-new derives it
+  from the OS user (`$USER` capitalized), which verification exposed; a prompt is
+  the sensible public-template equivalent.
+- Removed untracked `.clj-kondo/.cache/**` artifacts from `template/` and
+  `resources/.../root/` — git-ignored local cache, never published template content.
+- Codex checkpoint fixes: namespaced reserved keys, single-timestamp date derivation,
+  GitHub-username and EDN-safe developer validation patterns, non-interactive
+  `:validate` enforcement (frame).
+
+**Out-of-scope findings surfaced to the user (pre-existing in the deps-new copy
+too, not fixed to preserve byte-parity):** generated projects' CI fails on
+`bb outdated-check` because pinned deps/actions have aged; `bb check` depends on
+the mutating `fmt` and `outdated` tasks instead of `fmt-check`/`outdated-check`.
+
+**What the plan could have specified better:** it assumed deps-new's `developer`
+= capitalized scm user; it is actually the capitalized OS `$USER`. Checking the
+deps-new source during planning would have caught this before verification did.
