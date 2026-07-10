@@ -134,6 +134,19 @@ Filters: `snake_case`, `kebab_case`, `camel_case`, `pascal_case`, `lower`, `uppe
 
 An identifier resolves against the variables. An unresolved identifier in a comparison is treated as a bare string literal, so `db == postgres` works without quotes (useful in file names). A bare identifier on its own tests truthiness. `false`, `nil`, and `""` are falsy; everything else is truthy.
 
+**Raw blocks** emit their content verbatim. Use them when a file mixes frame tags with another tool's template syntax — a GitHub Actions workflow, for example:
+
+```liquid
+name: {{ project-name }}
+{% raw %}
+token: ${{ secrets.TOKEN }}
+{% endraw %}
+```
+
+Nothing between `{% raw %}` and `{% endraw %}` is parsed, so it may contain anything — including text that would otherwise be a frame syntax error. The delimiters themselves follow the whitespace rule below: alone on a line they leave no trace; inline they are removed in place. The first `{% endraw %}` always ends the block, so raw blocks cannot nest or contain that literal text. An unclosed `{% raw %}` is a syntax error.
+
+Raw blocks protect spans inside a rendered file; the `:raw` globs in `frame.edn` copy whole files verbatim. Use globs for fully foreign files and raw blocks for mixed ones.
+
 ### The whitespace rule
 
 A tag that is the only non-whitespace content on its line owns the whole line. The tag consumes its leading whitespace, the tag text, and the trailing newline. A false branch therefore leaves no trace, and a taken branch lands exactly as written.
