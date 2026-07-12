@@ -208,6 +208,36 @@ If two files render to the same destination and both survive, generation fails a
 - Any other `://` scheme (`ssh://`, `git://`, `git@host:` shorthand) is rejected.
 - Anything else is a local directory path, used in place. This is the fast path for developing a template.
 
+## Shell completions
+
+`frame completion <shell>` prints a completion script for bash, zsh, or fish.
+Completions cover the subcommands (`new`, `completion`, `help`) and the options
+of `new` (`--defaults`, `--dir`, `--var`). The `<source>` argument falls back to
+the shell's own filename completion, which is what you want for a local template
+path.
+
+Bash — add to `~/.bashrc`:
+
+```sh
+source <(frame completion bash)
+```
+
+Zsh — either source it the same way in `~/.zshrc` (after `compinit`), or
+drop it on your `fpath`:
+
+```sh
+mkdir -p ~/.zfunc
+frame completion zsh > ~/.zfunc/_frame
+```
+
+and make sure `~/.zshrc` contains `fpath+=~/.zfunc` before `compinit` runs.
+
+Fish:
+
+```sh
+frame completion fish > ~/.config/fish/completions/frame.fish
+```
+
 ## Development
 
 Install dependencies with [mise](https://mise.jdx.dev/getting-started.html) (or read `.mise.toml` and install them manually):
