@@ -1,0 +1,5 @@
+(ns frame.version)
+
+;; Single source of truth for frame's version. Referenced by the CLI app map
+;; and the :min-frame-version config check so the two cannot drift.
+(def current "0.1.0")

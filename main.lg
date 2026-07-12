@@ -1,10 +1,11 @@
 (ns frame.main
   (:require [frame.new :as new]
+            [frame.version :as version]
             [tiny-cli.core :as cli]))
 
 (def app
   {:name "frame"
-   :version "0.1.0"
+   :version version/current
    :doc "A declarative project templater."
    :footer "Run 'frame new --help' for details. Options must come before <source>."
    :commands [{:name "new"
