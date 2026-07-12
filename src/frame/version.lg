@@ -1,5 +1,7 @@
-(ns frame.version)
+(ns frame.version
+  (:require [io :as io]))
 
-;; Single source of truth for frame's version. Referenced by the CLI app map
-;; and the :min-frame-version config check so the two cannot drift.
-(def current "0.1.0")
+;; Single source of truth for frame's version, read from resources/VERSION
+;; (embedded into the binary when bundled). Referenced by the CLI app map and
+;; the :min-frame-version config check so the two cannot drift.
+(def current (io/slurp (io/resource "VERSION")))

@@ -1,5 +1,7 @@
 {:paths ["src"]
+ :resource-paths ["resources"]
  :main "main.lg"
+ :lg-version "1.11.1"
  :targets {:bin {:out "bin/frame"}}
  :deps {tiny-cli {:git/url "https://github.com/abogoyavlensky/tiny-cli"
                   :git/tag "v0.2.1"}
@@ -17,4 +19,9 @@
          check {:doc "Run all checks"
                 :do [{:sh "lgx fmt check"}
                      {:sh "lgx lint"}
-                     {:sh "lgx test"}]}}}                    
+                     {:sh "lgx test"}]}
+
+         release {:doc "Release a new version"
+                  :extra-paths ["scripts"]
+                  :do [{:run "scripts/tag.lg"}
+                       {:sh "git push --tags"}]}}}                    

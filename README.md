@@ -4,20 +4,46 @@ A declarative project templater. `frame` scaffolds a new project from a git or l
 
 A template is a plain directory (or git repo) with a `frame.edn` config and a `template/` directory that mirrors the generated project one-to-one. All template logic lives in three declarative places: variables in `frame.edn`, tags in file contents, and tags in file and directory names. There is no code in templates.
 
-## Install
+## Installation
 
-Install the toolchain with [mise](https://mise.jdx.dev/getting-started.html):
+### With [Homebrew](https://brew.sh)
 
-```bash
-mise trust && mise install
+Works on macOS and Linux:
+
+```sh
+brew install abogoyavlensky/tap/frame
 ```
 
-Build the binary:
+### With [mise](https://mise.jdx.dev)
 
-```bash
-lgx build
-bin/frame --help
+```sh
+mise use -g github:abogoyavlensky/frame@latest
 ```
+
+Or pin a version in `.mise.toml`:
+
+```toml
+[tools]
+"github:abogoyavlensky/frame" = "latest"
+```
+
+### Manual
+
+Download the archive for your platform from the
+[releases page](https://github.com/abogoyavlensky/frame/releases), extract it, and put
+`frame` on your `PATH`:
+
+```sh
+VERSION=0.1.0
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')   # linux | darwin
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+curl -sSL -o frame.tar.gz \
+  "https://github.com/abogoyavlensky/frame/releases/download/v${VERSION}/frame_${VERSION}_${OS}_${ARCH}.tar.gz"
+tar -xzf frame.tar.gz
+mv frame ~/.local/bin/
+```
+
+To build from source instead, see [Development](#development).
 
 ## Usage
 
