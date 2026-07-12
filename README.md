@@ -71,7 +71,7 @@ Everything under `template/` is copied to the output. File and directory names a
 
 ```edn
 {:description "Lightweight Clojure stack"       ; optional
- :min-frame-version "0.3.0"                     ; optional
+ :min-frame-version "0.1.0"                     ; optional
  :root "template"                               ; optional, default "template"
  :vars [{:key :db :prompt "Database" :type :enum
          :options ["sqlite" "postgres"] :default "sqlite"}
