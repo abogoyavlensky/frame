@@ -189,21 +189,21 @@ deps-new source dirs live under `resources/io/github/abogoyavlensky/clojure_stac
 
 ### `deploy.yaml` raw-block structure
 
-The one mixed file: mostly literal (incl. `${{ secrets.* }}`, `${{ github.sha }}`, `${{ cancelled() }}`) with a single live `{% if db == postgres %}` block for the CI env vars. Wrap the literal spans in `{% raw %}…{% endraw %}` and break out only for the conditional. Shape (exact bytes verified by diff):
+The one mixed file: mostly literal (incl. `${{ secrets.* }}`, `${{ github.sha }}`, `${{ cancelled() }}`) with a single live `{% if db == postgres %}` block for the CI env vars. Wrap the literal spans in `{% raw %}…{% endraw %}` and break out only for the conditional. **The postgres branch's content itself contains `${{ secrets.* }}`, so it must ALSO be wrapped in a nested `{% raw %}` block** — frame renders every output tag in a *taken* branch, so an un-raw'd `${{ secrets.DATABASE_URL }}` would be parsed as a frame output tag and error on the unresolved var `secrets.DATABASE_URL`. Shape (exact bytes verified by diff):
 
 ```
 {% raw %}name: Deploy
 … up to and including:
-          SESSION_SECRET_KEY: ${{ secrets.SESSION_SECRET_KEY }}{% endraw %}{% if db == postgres %}
+          SESSION_SECRET_KEY: ${{ secrets.SESSION_SECRET_KEY }}{% endraw %}{% if db == postgres %}{% raw %}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}{% endif %}{% raw %}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}{% endraw %}{% endif %}{% raw %}
         run: bb kamal deploy --version=${{ github.sha }}
 … through end of file …{% endraw %}
 ```
 
-The `${{ … }}` inside the `{% if db == postgres %}` block is literal GitHub-Actions text emitted by the `if` branch — that branch content is not re-parsed for `${{ }}`, but it IS scanned for frame tags, so it must contain none (it does not). The env-vars chunk is `github_workflows_deploy_ci_deploy_env_vars_postgres.txt`.
+The env-vars chunk (wrapped in the nested raw block) is `github_workflows_deploy_ci_deploy_env_vars_postgres.txt`. General rule: **any `{% if %}`/`{% case %}` branch whose chunk contains foreign `${{ }}`/`{{ }}` tags must wrap that chunk in `{% raw %}`.** Audited: only this deploy.yaml postgres branch needs it. (Other kamal/db chunks either contain no braces — `kamal-deploy-secrets-postgres.txt` uses `$VAR`, not `${{ }}` — or contain genuine frame tags `{{main/ns}}`/`{{main/file}}` that must render, not be raw'd.)
 
 ### Verification (the real acceptance gate)
 
@@ -396,7 +396,7 @@ All paths below are relative to `/Users/andrew/Projects/clojure-stack-lite` unle
   `deploy.yml`: rewrite `{{main/ns}}`→`{{ project-name }}`; replace `{{deploy-config-kamal}}` (own line) with inline `{% case db %}{% when sqlite %}<kamal-sqlite>{% when postgres %}<kamal-postgres>{% endcase %}`. The sqlite chunk `kamal-deploy-config-sqlite.txt` contains `{{main/ns}}` and the postgres chunk `kamal-deploy-config-postgres.txt` contains `{{main/file}}` → rewrite those nested tags. `secrets`: replace `{{deploy-secrets-kamal}}` (own line) with `{% if db == postgres %}<kamal-deploy-secrets-postgres.txt>{% endif %}`.
 
 - [ ] **Step 2: `deploy.yaml` with `{% raw %}` blocks**
-  Build from `R/github_workflows_deploy_yaml_kamal/deploy.yaml` using the raw-block structure in the Design section: literal spans wrapped in `{% raw %}…{% endraw %}`, the CI env-vars as a live `{% if db == postgres %}` block (chunk `github_workflows_deploy_ci_deploy_env_vars_postgres.txt`). The filename is conditional on `deploy==kamal`.
+  Build from `R/github_workflows_deploy_yaml_kamal/deploy.yaml` using the raw-block structure in the Design section: literal spans wrapped in `{% raw %}…{% endraw %}`, the CI env-vars as a live `{% if db == postgres %}{% raw %}…{% endraw %}{% endif %}` block (chunk `github_workflows_deploy_ci_deploy_env_vars_postgres.txt`, itself nested in raw because it contains `${{ secrets.* }}`). The filename is conditional on `deploy==kamal`. Do a focused check right after writing it (before the full matrix): generate combo #6 (postgres, kamal) with frame and confirm it does not error and `deploy.yaml` matches deps-new — this isolates raw-block mistakes.
 
 - [ ] **Step 3: `README.md`, `Dockerfile`, `LICENSE`, `manifest.json`**
   - `README.md`: `{{main/ns}}`→`{{ project-name }}`; `{{readme-deploy-kamal}}` (inline after "…in `resources/public` folder.") → `{% if deploy == kamal %}<readme_deploy_kamal.md>{% endif %}`.
