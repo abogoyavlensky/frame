@@ -1,15 +1,21 @@
 (ns frame.config
-  (:require [edn]))
+  (:require [edn]
+            [frame.version :as version]))
 
 ;; ---------------------------------------------------------------------------
 ;; frame.edn reading and validation.
 ;;
 ;; read-config returns a normalized map with defaults applied:
-;;   {:description s|nil :root "template" :vars [...] :computed {} :raw []}
+;;   {:description s|nil :root "template" :vars [...] :computed {} :raw []
+;;    :warnings [s ...]}
+;; :warnings lists unrecognized top-level keys; it never blocks generation.
 ;; Every failure throws ex-info {:reason :config ...} before any prompting.
 ;; ---------------------------------------------------------------------------
 
 (def ^:private valid-types #{:string :enum :boolean})
+
+(def ^:private known-keys
+  #{:description :root :vars :computed :raw :min-frame-version})
 
 (def ^:private reserved-var-names #{"project-name" "now-date" "now-year"})
 
@@ -90,8 +96,14 @@
       (let [raw (first forms)]
         (when-not (map? raw)
           (config-error "frame.edn must contain a map" {:dir dir}))
+        ;; Version first: a too-new template should say "upgrade frame", not
+        ;; trip over whatever newer config feature it also uses.
+        (check-min-version! (:min-frame-version raw) version/current)
         {:description (:description raw)
          :root (or (:root raw) "template")
          :vars (vec (map validate-var (or (:vars raw) [])))
          :computed (or (:computed raw) {})
-         :raw (or (:raw raw) [])}))))
+         :raw (or (:raw raw) [])
+         ;; Keys may be any EDN value, so render and sort via pr-str.
+         :warnings (vec (map (fn [k] (str "unrecognized key " (pr-str k) " in frame.edn"))
+                             (sort-by pr-str (remove known-keys (keys raw)))))}))))

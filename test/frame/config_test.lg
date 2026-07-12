@@ -1,6 +1,7 @@
 (ns frame.config-test
   (:require [clojure.test :refer [deftest is]]
             [frame.config :as config]
+            [frame.version :as version]
             [string :as str]))
 
 ;; Write edn-str as frame.edn in a throwaway dir and read it back.
@@ -99,6 +100,62 @@
   (is (= :config (:reason (check-min "1.2" "0.1.0"))))
   (is (= :config (:reason (check-min "abc" "0.1.0"))))
   (is (= :config (:reason (check-min 1.2 "0.1.0")))))
+
+;; ---------------------------------------------------------------------------
+;; :min-frame-version and unknown-key warnings through read-config
+;; ---------------------------------------------------------------------------
+
+(deftest no-min-frame-version-reads-fine
+  (let [r (read-cfg {:vars []})]
+    (is (= [] (:warnings r)))))
+
+(deftest satisfied-min-frame-version-reads-fine
+  (let [r (read-cfg {:min-frame-version "0.0.1" :vars []})]
+    (is (= [] (:warnings r)))))
+
+(deftest unsatisfied-min-frame-version-errors
+  (let [r (read-cfg {:min-frame-version "999.0.0" :vars []})]
+    (is (= :config (:reason (:error r))))
+    (is (str/includes? (:msg r) "999.0.0"))
+    (is (str/includes? (:msg r) version/current))))
+
+(deftest malformed-min-frame-version-errors
+  (is (= :config (:reason (:error (read-cfg {:min-frame-version "1.2" :vars []})))))
+  (is (= :config (:reason (:error (read-cfg {:min-frame-version 1.2 :vars []}))))))
+
+(deftest min-frame-version-checked-before-var-validation
+  ;; A too-new template with an unknown var type must report the version, not
+  ;; the var type — that is the whole point of checking the version first.
+  (let [r (read-cfg {:min-frame-version "999.0.0"
+                     :vars [{:key :db
+                             :prompt "P"
+                             :type :future-type}]})]
+    (is (= :config (:reason (:error r))))
+    (is (str/includes? (:msg r) "999.0.0"))))
+
+(deftest unknown-top-level-keys-warn
+  (let [r (read-cfg {:vars []
+                     :extra-key 1
+                     :typo "x"})]
+    (is (= 2 (count (:warnings r))))
+    (is (some (fn [w] (str/includes? w ":extra-key")) (:warnings r)))
+    (is (some (fn [w] (str/includes? w ":typo")) (:warnings r)))))
+
+(deftest non-keyword-top-level-keys-warn-without-throwing
+  ;; EDN allows string and numeric map keys; warning must not assume keywords.
+  (let [r (read-cfg {:vars [] "stray" 1 42 "x"})]
+    (is (= 2 (count (:warnings r))))
+    (is (some (fn [w] (str/includes? w "\"stray\"")) (:warnings r)))
+    (is (some (fn [w] (str/includes? w "42")) (:warnings r)))))
+
+(deftest all-known-keys-produce-no-warnings
+  (let [r (read-cfg {:description "D"
+                     :root "tpl"
+                     :min-frame-version "0.0.1"
+                     :vars []
+                     :computed {}
+                     :raw []})]
+    (is (= [] (:warnings r)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Validation errors (all carry {:reason :config})
