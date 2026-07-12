@@ -1,6 +1,7 @@
 (ns frame.config-test
   (:require [clojure.test :refer [deftest is]]
-            [frame.config :as config]))
+            [frame.config :as config]
+            [string :as str]))
 
 ;; Write edn-str as frame.edn in a throwaway dir and read it back.
 (defn- read-edn [edn-str]
@@ -52,6 +53,50 @@
     (is (= :db (:key (first (:vars r)))))
     (is (= {:top-ns "{{project-name | snake_case}}"} (:computed r)))
     (is (= ["**/*.png"] (:raw r)))))
+
+;; ---------------------------------------------------------------------------
+;; Semver helpers
+;; ---------------------------------------------------------------------------
+
+(deftest parse-semver-accepts-exact-x-y-z
+  (is (= [0 3 0] (config/parse-semver "0.3.0")))
+  (is (= [1 22 333] (config/parse-semver "1.22.333"))))
+
+(deftest parse-semver-rejects-everything-else
+  (is (nil? (config/parse-semver "1.2")))
+  (is (nil? (config/parse-semver "1.2.3.4")))
+  (is (nil? (config/parse-semver "abc")))
+  (is (nil? (config/parse-semver "1.2.x")))
+  (is (nil? (config/parse-semver "")))
+  (is (nil? (config/parse-semver 1.2)))
+  (is (nil? (config/parse-semver nil))))
+
+;; Run check-min-version! and return nil on success or ex-data on throw.
+(defn- check-min [min-version current]
+  (try (do (config/check-min-version! min-version current) nil)
+       (catch e (assoc (ex-data e) :msg (ex-message e)))))
+
+(deftest check-min-version-absent-is-noop
+  (is (nil? (check-min nil "0.1.0"))))
+
+(deftest check-min-version-satisfied-passes
+  (is (nil? (check-min "0.0.1" "0.1.0")))
+  (is (nil? (check-min "0.1.0" "0.1.0"))))
+
+(deftest check-min-version-too-old-errors
+  (let [r (check-min "0.2.0" "0.1.0")]
+    (is (= :config (:reason r)))
+    (is (str/includes? (:msg r) "0.2.0"))
+    (is (str/includes? (:msg r) "0.1.0"))))
+
+(deftest check-min-version-compares-numerically
+  ;; 0.10.0 is newer than 0.9.0; lexicographic comparison would get this wrong.
+  (is (nil? (check-min "0.9.0" "0.10.0"))))
+
+(deftest check-min-version-malformed-errors
+  (is (= :config (:reason (check-min "1.2" "0.1.0"))))
+  (is (= :config (:reason (check-min "abc" "0.1.0"))))
+  (is (= :config (:reason (check-min 1.2 "0.1.0")))))
 
 ;; ---------------------------------------------------------------------------
 ;; Validation errors (all carry {:reason :config})

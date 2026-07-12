@@ -16,6 +16,29 @@
 (defn- config-error [msg data]
   (throw (ex-info msg (assoc data :reason :config))))
 
+(defn parse-semver
+  "Parse an exact \"X.Y.Z\" semver string into [X Y Z] ints, or nil for
+   anything else (wrong shape, extra components, non-strings)."
+  [s]
+  (when (string? s)
+    (when-let [m (re-matches #"^(\d+)\.(\d+)\.(\d+)$" s)]
+      (vec (map parse-long (rest m))))))
+
+(defn check-min-version!
+  "Throw {:reason :config} when min-version (a template's :min-frame-version)
+   is malformed or newer than current. nil min-version is a no-op."
+  [min-version current]
+  (when (some? min-version)
+    (let [required (parse-semver min-version)]
+      (when (nil? required)
+        (config-error (str ":min-frame-version must be an exact semver string like \"0.3.0\", got "
+                           (pr-str min-version))
+                      {:min-frame-version min-version}))
+      (when (pos? (compare required (parse-semver current)))
+        (config-error (str "template requires frame >= " min-version
+                           ", but this is frame " current " (upgrade frame)")
+                      {:min-frame-version min-version :current current})))))
+
 (defn- validate-var
   "Validate one :vars entry, returning it unchanged on success."
   [v]
