@@ -1,25 +1,21 @@
 (ns frame.source
-  (:require [string :as str]))
+  (:require [frame.paths :as paths]
+            [string :as str]))
 
 ;; ---------------------------------------------------------------------------
 ;; Template source resolution.
 ;;
 ;; A source is either:
-;;   - an https://host/owner/repo[.git] git URL -> shallow-cloned and cached
-;;     under $FRAME_HOME/templates/<host>/<owner>/<repo>/<sha>/ (FRAME_HOME
-;;     defaults to ~/.frame), reused when already present; or
+;;   - an https://host/owner/repo[.git] git URL -> cloned and cached under
+;;     <cache-dir>/templates/<host>/<owner>/<repo>/<sha>/ (see frame.paths:
+;;     $XDG_CACHE_HOME/frame by default ~/.cache/frame, or $FRAME_HOME when
+;;     set), reused when already present; or
 ;;   - any other path -> a local directory, used in place (absolutized).
 ;; Non-https URL schemes (ssh://, git://, git@host:owner/repo) are rejected.
 ;; ---------------------------------------------------------------------------
 
 (defn- source-error [msg data]
   (throw (ex-info msg (assoc data :reason :source))))
-
-(defn- frame-home []
-  (let [override (os/getenv "FRAME_HOME")]
-    (if (str/blank? override)
-      (str (os/getenv "HOME") "/.frame")
-      override)))
 
 (defn- unsupported-url [s]
   (source-error (str "unsupported source URL: " s
@@ -80,7 +76,7 @@
 
 (defn- template-dir [url sha]
   (let [[host owner repo] (parse-git-url url)]
-    (str (frame-home) "/templates/" host "/" owner "/" repo "/" sha)))
+    (str (paths/cache-dir) "/templates/" host "/" owner "/" repo "/" sha)))
 
 (defn- clone-sha!
   "Clone url into dest via a tmp sibling and check out the exact sha, then

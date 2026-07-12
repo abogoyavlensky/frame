@@ -30,6 +30,7 @@ Consequences:
 - **Existing `FRAME_HOME` users are unaffected** — the layout under `$FRAME_HOME` is byte-for-byte the same.
 - Only users relying on the implicit `~/.frame` default move to `~/.cache/frame`. This is cheap: the cache is content-addressed and re-clonable, so the worst case is one re-clone.
 - The `FRAME_HOME` override appends **no** `/frame` segment (templates go directly to `$FRAME_HOME/templates`, preserving the current exact layout). Only the XDG default appends `/frame`, because `~/.cache` is shared across applications.
+- **Per the XDG Base Directory spec, a *relative* `XDG_CACHE_HOME` is invalid and ignored** — it falls back to `$HOME/.cache`, exactly as if unset. `app-dir` treats an xdg value as usable only when it is non-blank **and** absolute (starts with `/`). This rule applies to the XDG variable only; `FRAME_HOME` is frame's own override and is used verbatim (its current behavior is preserved).
 
 ### Future config location (documented, NOT implemented here)
 When aliases land, `frame.paths` will gain a symmetric `config-dir`:
@@ -54,14 +55,17 @@ This is documented in `frame.paths` as a comment and here in the plan so the fut
 (defn app-dir
   "Resolve frame's base directory for one XDG category.
    frame-home, when non-blank, overrides everything (used as-is, no suffix).
-   Otherwise use xdg-home (falling back to <home>/<fallback> when blank),
-   then append \"/frame\"."
+   Otherwise use xdg-home when it is non-blank AND absolute (starts with \"/\");
+   a blank or relative xdg-home is ignored per the XDG spec and falls back to
+   <home>/<fallback>. Then append \"/frame\"."
   [{:keys [frame-home xdg-home home fallback]}]
   ...)
 ;; Examples (cache category, fallback \".cache\"):
 ;;   {:frame-home \"/tmp/fh\"        ...}                       => \"/tmp/fh\"
 ;;   {:frame-home \"\"  :xdg-home \"/x/cache\" ...}             => \"/x/cache/frame\"
 ;;   {:frame-home \"\"  :xdg-home \"\" :home \"/h\" :fallback \".cache\"} => \"/h/.cache/frame\"
+;;   {:frame-home \"\"  :xdg-home \"rel/dir\" :home \"/h\" :fallback \".cache\"} => \"/h/.cache/frame\"  (relative xdg ignored)
+;;   {:frame-home nil :xdg-home nil :home \"/h\" :fallback \".cache\"} => \"/h/.cache/frame\"  (nil == unset)
 ```
 `cache-dir` wires it: `(app-dir {:frame-home (os/getenv "FRAME_HOME") :xdg-home (os/getenv "XDG_CACHE_HOME") :home (os/getenv "HOME") :fallback ".cache"})`.
 
@@ -88,24 +92,26 @@ This is documented in `frame.paths` as a comment and here in the plan so the fut
 - Create: `src/frame/paths.lg`
 - Test: `test/frame/paths_test.lg`
 
-- [ ] **Step 1: Write the failing test**
-  Create `test/frame/paths_test.lg` (namespace `frame.paths-test`, requiring `clojure.test` and `frame.paths`, following the style of `test/frame/source_test.lg`). Test `app-dir` with three cases, asserting the exact strings from the contract in the Design:
+- [x] **Step 1: Write the failing test**
+  Create `test/frame/paths_test.lg` (namespace `frame.paths-test`, requiring `clojure.test` and `frame.paths`, following the style of `test/frame/source_test.lg`). Test `app-dir` with these cases, asserting the exact strings from the contract in the Design:
   - override present: `(app-dir {:frame-home "/tmp/fh" :xdg-home "/x/cache" :home "/h" :fallback ".cache"})` => `"/tmp/fh"` (override wins even when xdg is set).
-  - xdg present, override blank: `(app-dir {:frame-home "" :xdg-home "/x/cache" :home "/h" :fallback ".cache"})` => `"/x/cache/frame"`.
+  - xdg present + absolute, override blank: `(app-dir {:frame-home "" :xdg-home "/x/cache" :home "/h" :fallback ".cache"})` => `"/x/cache/frame"`.
   - both blank: `(app-dir {:frame-home "" :xdg-home "" :home "/h" :fallback ".cache"})` => `"/h/.cache/frame"`.
+  - **relative xdg ignored** (XDG spec): `(app-dir {:frame-home "" :xdg-home "rel/dir" :home "/h" :fallback ".cache"})` => `"/h/.cache/frame"`.
+  - **nil env values** (`os/getenv` returns nil when unset): `(app-dir {:frame-home nil :xdg-home nil :home "/h" :fallback ".cache"})` => `"/h/.cache/frame"`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `lgx test test/frame/paths_test.lg`
   Expected: FAIL (namespace `frame.paths` not found).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
   Create `src/frame/paths.lg` (namespace `frame.paths`, requiring `[string :as str]`). Implement public `app-dir` per the contract in the Design: when `frame-home` is non-blank (use `str/blank?`) return it as-is; otherwise compute the base as `xdg-home` when non-blank else `(str home "/" fallback)`, and return `(str base "/frame")`. Add public `cache-dir` wiring `os/getenv` for `FRAME_HOME` / `XDG_CACHE_HOME` / `HOME` with fallback `".cache"`. Add a header comment describing the cache-vs-config split and the future `config-dir` scheme (from the Design table) so aliases can be added symmetrically — but do NOT add `config-dir`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
   Run: `lgx test test/frame/paths_test.lg`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add frame.paths for XDG-aware base dir resolution"`
 
 ## Task 2: Wire the template cache to `frame.paths`
@@ -114,28 +120,32 @@ This is documented in `frame.paths` as a comment and here in the plan so the fut
 - Modify: `src/frame/source.lg`
 - Test: `test/frame/source_test.lg` (existing; should stay green with no edits)
 
-- [ ] **Step 1: Update `source.lg`**
+> Deviation (Step 2): `lgx test` accepts only one file, so the two files were run as separate `lgx test <file>` invocations instead of one combined command.
+> Verified (Step 4): all three env cases confirmed with tiny-tui — clone landed under `$HOME/.cache/frame/templates/...` (default), `$FRAME_HOME/templates/...` (override), and `$XDG_CACHE_HOME/frame/templates/...` (custom XDG). The trailing `frame.edn not found` is expected (tiny-tui is not a frame template); the clone/cache path is what this step checks.
+
+- [x] **Step 1: Update `source.lg`**
   In `src/frame/source.lg`:
   - Add `[frame.paths :as paths]` to the `:require`.
   - Delete the private `frame-home` defn.
   - Change `template-dir` to build `(str (paths/cache-dir) "/templates/" host "/" owner "/" repo "/" sha)`.
   - Refresh the header comment (lines ~4-13): replace the `$FRAME_HOME/templates/... (FRAME_HOME defaults to ~/.frame)` description with the XDG cache location (`$XDG_CACHE_HOME/frame/templates/...`, default `~/.cache/frame`, `FRAME_HOME` overrides the whole base), and drop the inaccurate "shallow-cloned" wording (the clone is a full `git clone`, not `--depth 1`).
 
-- [ ] **Step 2: Run the source + paths tests**
+- [x] **Step 2: Run the source + paths tests**
   Run: `lgx test test/frame/source_test.lg test/frame/paths_test.lg`
   Expected: PASS (existing source tests are pure/local-path and unaffected).
 
-- [ ] **Step 3: Run full checks**
+- [x] **Step 3: Run full checks**
   Run: `lgx check`
   Expected: green (fmt + lint + all tests).
 
-- [ ] **Step 4: Manual verification (needs network)**
+- [x] **Step 4: Manual verification (needs network)**
   Build and clone a small template into a temp cache, confirming the path layout:
   - Default XDG: `HOME=$(mktemp -d) env -u FRAME_HOME -u XDG_CACHE_HOME bin/frame new --defaults --dir "$(mktemp -d)/out" https://github.com/abogoyavlensky/tiny-tui app`, then confirm `~/.cache/frame/templates/github.com/abogoyavlensky/tiny-tui/<sha>/` exists under that temp `HOME` (i.e. `$HOME/.cache/frame/templates/...`).
   - Override: set `FRAME_HOME=$(mktemp -d)` and repeat; confirm the clone lands under `$FRAME_HOME/templates/github.com/abogoyavlensky/tiny-tui/<sha>/`.
+  - Custom absolute XDG: set `XDG_CACHE_HOME=$(mktemp -d)` (FRAME_HOME unset) and repeat; confirm the clone lands under `$XDG_CACHE_HOME/frame/templates/...`.
   Run `lgx build` first if `bin/frame` is stale. (Manual — skip if no network; note it in the task summary.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: cache templates under XDG cache dir via frame.paths"`
 
 ## Task 3: Documentation
