@@ -22,7 +22,11 @@
   [s]
   (when (string? s)
     (when-let [m (re-matches #"^(\d+)\.(\d+)\.(\d+)$" s)]
-      (vec (map parse-long (rest m))))))
+      (let [parts (vec (map parse-long (rest m)))]
+        ;; parse-long returns nil on overflow, and nil compares as "older
+        ;; than everything" — reject instead of silently passing the check.
+        (when (every? some? parts)
+          parts)))))
 
 (defn check-min-version!
   "Throw {:reason :config} when min-version (a template's :min-frame-version)

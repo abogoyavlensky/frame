@@ -69,7 +69,9 @@
   (is (nil? (config/parse-semver "1.2.x")))
   (is (nil? (config/parse-semver "")))
   (is (nil? (config/parse-semver 1.2)))
-  (is (nil? (config/parse-semver nil))))
+  (is (nil? (config/parse-semver nil)))
+  ;; components beyond parse-long's range must reject, not parse as nil
+  (is (nil? (config/parse-semver "999999999999999999999.0.0"))))
 
 ;; Run check-min-version! and return nil on success or ex-data on throw.
 (defn- check-min [min-version current]
