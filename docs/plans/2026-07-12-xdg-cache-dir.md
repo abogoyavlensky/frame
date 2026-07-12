@@ -1,5 +1,7 @@
 # XDG Cache Directory Implementation Plan
 
+> **Status: COMPLETE** (2026-07-12). See the Completion Summary at the end.
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move frame's downloaded-template cache out of `~/.frame` and into the XDG cache directory (default `~/.cache/frame`), centralizing base-directory resolution in a new `frame.paths` namespace so a future aliases-config location can reuse the same scheme.
@@ -167,3 +169,28 @@ This is documented in `frame.paths` as a comment and here in the plan so the fut
 ## Notes
 - DRY/YAGNI: `config-dir` and the aliases feature are intentionally out of scope — only the cache moves. The `frame.paths` seam is what makes the later addition small.
 - No migration code: old `~/.frame` caches are orphaned and harmless; a re-clone repopulates the new location on demand.
+
+---
+
+## Completion Summary
+
+**Status: COMPLETE.** All three tasks implemented, tested, reviewed, and committed. `lgx check` is green: **152 tests, 279 assertions, 0 failures**, clean fmt and lint.
+
+### What was implemented
+- **`src/frame/paths.lg`** (new, commit `e338b5f`): `frame.paths` namespace. Public pure `app-dir` resolves a base directory from explicit env values — `FRAME_HOME` overrides verbatim; otherwise `XDG_*` (when non-blank **and** absolute) plus a `/frame` segment, else `<home>/<fallback>/frame`. Thin `cache-dir` wires `os/getenv`. A header comment documents the symmetric `config-dir` scheme for the future aliases config (not built).
+- **`src/frame/source.lg`** (commit `47aecf2`): requires `frame.paths`, `template-dir` now builds on `(paths/cache-dir)`; removed the private `frame-home`; refreshed the header comment (and dropped the stale "shallow-cloned" wording).
+- **`README.md`** (commit `d64e90a`): the caching docs now describe `~/.cache/frame/...` (honoring `XDG_CACHE_HOME`), that the cache is safe to delete, and that `FRAME_HOME` overrides the base.
+- **`test/frame/paths_test.lg`** (new): 5 pure unit tests covering every `app-dir` branch, including relative-XDG-ignored and nil-env.
+
+### Result
+Templates now cache under `$XDG_CACHE_HOME/frame` (default `~/.cache/frame`) instead of `~/.frame`. Existing `FRAME_HOME` users are unaffected (layout under `$FRAME_HOME/templates` is byte-for-byte identical). Verified end-to-end against a real clone in all three env configurations (default XDG, `FRAME_HOME`, custom `XDG_CACHE_HOME`).
+
+### Codex feedback folded in
+- **Plan review (pre-implementation):** flagged that a *relative* `XDG_CACHE_HOME` must be ignored per the XDG spec. Folded into `app-dir` (absolute-path check) plus two extra tests (relative-ignored, nil-env) before any code was written. Both advisory recs (nil test, custom-absolute-XDG manual check) were also taken.
+- **Per-task reviews:** all three commits reviewed by Codex, no actionable defects.
+
+### Deviations
+- Task 2 Step 2: `lgx test` accepts only one file, so the two test files were run as separate invocations rather than one combined command. No design impact.
+
+### What the plan could have specified better
+The XDG absolute-path rule should have been in the original design — it's a core part of the spec that the plan review caught rather than the design. A plan touching XDG dirs should cite the "relative values are invalid and ignored" rule up front. Otherwise the plan held up: file paths, the shared `app-dir` contract, and the verification steps all matched reality.
