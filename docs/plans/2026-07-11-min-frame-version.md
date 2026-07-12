@@ -159,16 +159,32 @@ Pure tests for semver parsing/comparison (ordering, numeric-vs-lexicographic, ma
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Document the new behavior**
+- [x] **Step 1: Document the new behavior**
   In the `### frame.edn` section (use /writing-clearly if available):
   - Add `:min-frame-version "0.3.0"` to the example config with an `; optional` comment.
   - Add a bullet: optional exact semver string; frame refuses to generate (before any prompting) when the installed frame is older; malformed values are config errors.
   - Note that unrecognized top-level keys in `frame.edn` produce a warning on stderr but do not block generation.
   - Extend the existing "reported before any prompting" error list with a too-old frame version.
 
-- [ ] **Step 2: Run full checks**
+- [x] **Step 2: Run full checks**
   Run: `lgx check`
   Expected: fmt, lint, and tests all pass. Fix any formatting with `lgx fmt`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "docs: document :min-frame-version and unknown-key warnings"`
+
+---
+
+## Completion Summary
+
+**Status: completed** (all 5 tasks, 2026-07-12).
+
+Implemented as designed: `frame.version/current` is the single version source (used by the CLI and the config check); `parse-semver` / `check-min-version!` in `frame.config` enforce an optional exact-semver `:min-frame-version` immediately after parsing and before var validation; `read-config` returns a `:warnings` vector for unrecognized top-level keys, which `frame new` prints to stderr as `frame: warning: ...` before any prompting; README documents both behaviors.
+
+Verified: `lgx check` fully green (fmt, lint 0 warnings, 147 tests / 274 assertions), plus an end-to-end drive of the built binary — generation with a satisfied version and an unknown key (warning printed, project rendered), and rejection with `:min-frame-version "0.1.1"` (exit 1, `template requires frame >= 0.1.1, but this is frame 0.1.0 (upgrade frame)`).
+
+Deviations (all from codex review checkpoints, none changed the design):
+- `parse-semver` rejects components that overflow `parse-long` (would otherwise compare as nil and silently pass) — fixup `a1f6f04`.
+- README example uses `:min-frame-version "0.1.0"` instead of the plan's `"0.3.0"` so the copyable example works against the current release — fixup `f70e548`.
+
+What the plan could have specified better: the README example version should have been pinned to the current release from the start; everything else held up.
