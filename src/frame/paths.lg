@@ -1,0 +1,49 @@
+(ns frame.paths
+  (:require [string :as str]))
+
+;; ---------------------------------------------------------------------------
+;; Base-directory resolution, split by XDG category.
+;;
+;; frame keeps two kinds of on-disk state with different lifecycles:
+;;   - the template cache: disposable, re-clonable, content-addressed by sha;
+;;   - (future) an aliases config: precious, user-authored, must survive a
+;;     cache wipe.
+;; They live in separate XDG homes so "safe to delete" is explicit:
+;;   cache  -> $XDG_CACHE_HOME/frame   (default ~/.cache/frame)
+;;   config -> $XDG_CONFIG_HOME/frame  (default ~/.config/frame)  [not built yet]
+;; FRAME_HOME, when set, overrides both (everything under one dir), which keeps
+;; the old single-directory layout working for anyone who set it.
+;;
+;; When aliases land, add a symmetric `config-dir` mirroring `cache-dir`:
+;;   (app-dir {:frame-home (os/getenv "FRAME_HOME")
+;;             :xdg-home   (os/getenv "XDG_CONFIG_HOME")
+;;             :home       (os/getenv "HOME")
+;;             :fallback   ".config"})
+;; and store config.edn under it (directly under $FRAME_HOME when overridden).
+;; ---------------------------------------------------------------------------
+
+(defn app-dir
+  "Resolve frame's base directory for one XDG category from explicit env values
+   (pure, so it is unit-testable without touching the process environment).
+   frame-home, when non-blank, overrides everything and is used verbatim.
+   Otherwise use xdg-home when it is non-blank AND absolute (starts with \"/\");
+   a blank or relative xdg-home is ignored per the XDG spec and falls back to
+   <home>/<fallback>. The resolved xdg/home base then gets a \"/frame\" segment,
+   since those roots are shared across applications."
+  [{:keys [frame-home xdg-home home fallback]}]
+  (if-not (str/blank? frame-home)
+    frame-home
+    (let [base (if (and (not (str/blank? xdg-home))
+                        (str/starts-with? xdg-home "/"))
+                 xdg-home
+                 (str home "/" fallback))]
+      (str base "/frame"))))
+
+(defn cache-dir
+  "frame's cache base directory: $FRAME_HOME, else $XDG_CACHE_HOME/frame, else
+   ~/.cache/frame."
+  []
+  (app-dir {:frame-home (os/getenv "FRAME_HOME")
+            :xdg-home (os/getenv "XDG_CACHE_HOME")
+            :home (os/getenv "HOME")
+            :fallback ".cache"}))

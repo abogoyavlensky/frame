@@ -1,0 +1,48 @@
+(ns frame.paths-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.paths :as paths]))
+
+;; ---------------------------------------------------------------------------
+;; app-dir: pure base-directory resolution (no env access)
+;; ---------------------------------------------------------------------------
+
+(deftest frame-home-override-wins
+  ;; A non-blank override is used as-is, even when xdg-home is also set.
+  (is (= "/tmp/fh"
+         (paths/app-dir {:frame-home "/tmp/fh"
+                         :xdg-home "/x/cache"
+                         :home "/h"
+                         :fallback ".cache"}))))
+
+(deftest xdg-home-used-when-override-blank
+  ;; Blank override -> xdg-home plus the "/frame" app segment.
+  (is (= "/x/cache/frame"
+         (paths/app-dir {:frame-home ""
+                         :xdg-home "/x/cache"
+                         :home "/h"
+                         :fallback ".cache"}))))
+
+(deftest home-fallback-when-both-blank
+  ;; Blank override and blank xdg-home -> <home>/<fallback>/frame.
+  (is (= "/h/.cache/frame"
+         (paths/app-dir {:frame-home ""
+                         :xdg-home ""
+                         :home "/h"
+                         :fallback ".cache"}))))
+
+(deftest relative-xdg-home-ignored
+  ;; XDG spec: a relative XDG_* value is invalid and ignored, so fall back to
+  ;; <home>/<fallback> just as if it were unset.
+  (is (= "/h/.cache/frame"
+         (paths/app-dir {:frame-home ""
+                         :xdg-home "rel/dir"
+                         :home "/h"
+                         :fallback ".cache"}))))
+
+(deftest nil-env-values-treated-as-unset
+  ;; os/getenv returns nil for unset vars; nil must behave like blank.
+  (is (= "/h/.cache/frame"
+         (paths/app-dir {:frame-home nil
+                         :xdg-home nil
+                         :home "/h"
+                         :fallback ".cache"}))))
