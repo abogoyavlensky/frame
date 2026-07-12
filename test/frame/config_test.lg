@@ -76,7 +76,8 @@
 
 ;; Run check-min-version! and return nil on success or ex-data on throw.
 (defn- check-min [min-version current]
-  (try (do (config/check-min-version! min-version current) nil)
+  (try (config/check-min-version! min-version current)
+       nil
        (catch e (assoc (ex-data e) :msg (ex-message e)))))
 
 (deftest check-min-version-absent-is-noop
@@ -110,18 +111,22 @@
     (is (= [] (:warnings r)))))
 
 (deftest satisfied-min-frame-version-reads-fine
-  (let [r (read-cfg {:min-frame-version "0.0.1" :vars []})]
+  (let [r (read-cfg {:min-frame-version "0.0.1"
+                     :vars []})]
     (is (= [] (:warnings r)))))
 
 (deftest unsatisfied-min-frame-version-errors
-  (let [r (read-cfg {:min-frame-version "999.0.0" :vars []})]
+  (let [r (read-cfg {:min-frame-version "999.0.0"
+                     :vars []})]
     (is (= :config (:reason (:error r))))
     (is (str/includes? (:msg r) "999.0.0"))
     (is (str/includes? (:msg r) version/current))))
 
 (deftest malformed-min-frame-version-errors
-  (is (= :config (:reason (:error (read-cfg {:min-frame-version "1.2" :vars []})))))
-  (is (= :config (:reason (:error (read-cfg {:min-frame-version 1.2 :vars []}))))))
+  (is (= :config (:reason (:error (read-cfg {:min-frame-version "1.2"
+                                             :vars []})))))
+  (is (= :config (:reason (:error (read-cfg {:min-frame-version 1.2
+                                             :vars []}))))))
 
 (deftest min-frame-version-checked-before-var-validation
   ;; A too-new template with an unknown var type must report the version, not
@@ -143,7 +148,9 @@
 
 (deftest non-keyword-top-level-keys-warn-without-throwing
   ;; EDN allows string and numeric map keys; warning must not assume keywords.
-  (let [r (read-cfg {:vars [] "stray" 1 42 "x"})]
+  (let [r (read-cfg {:vars []
+                     "stray" 1
+                     42 "x"})]
     (is (= 2 (count (:warnings r))))
     (is (some (fn [w] (str/includes? w "\"stray\"")) (:warnings r)))
     (is (some (fn [w] (str/includes? w "42")) (:warnings r)))))

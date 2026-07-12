@@ -51,21 +51,21 @@ Pure tests for semver parsing/comparison (ordering, numeric-vs-lexicographic, ma
 - Create: `src/frame/version.lg`
 - Modify: `main.lg`
 
-- [ ] **Step 1: Create `src/frame/version.lg`**
+- [x] **Step 1: Create `src/frame/version.lg`**
   Namespace `frame.version` containing exactly one def:
   ```clojure
   (def current "0.1.0")
   ```
   A short comment noting this is the single source of truth for frame's version, referenced by the CLI and the `:min-frame-version` config check.
 
-- [ ] **Step 2: Use it in `main.lg`**
+- [x] **Step 2: Use it in `main.lg`**
   Require `frame.version` and replace the `:version "0.1.0"` literal in the `app` map with `version/current`.
 
-- [ ] **Step 3: Verify the CLI still reports its version**
+- [x] **Step 3: Verify the CLI still reports its version**
   Run: `lgx build && bin/frame --help`
   Expected: help output unchanged, version shown as `0.1.0`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "refactor: move frame version to shared frame.version namespace"`
 
 ### Task 2: Semver parse, compare, and check helpers
@@ -74,7 +74,7 @@ Pure tests for semver parsing/comparison (ordering, numeric-vs-lexicographic, ma
 - Modify: `src/frame/config.lg`
 - Test: `test/frame/config_test.lg`
 
-- [ ] **Step 1: Write failing tests for the helpers**
+- [x] **Step 1: Write failing tests for the helpers**
   In `config_test.lg`, a new section testing two public functions in `frame.config`:
   - `parse-semver` — `"0.3.0"` → `[0 3 0]`; returns `nil` for `"1.2"`, `"1.2.3.4"`, `"abc"`, `"1.2.x"`, `""`, and non-strings.
   - `check-min-version!` — takes `(min-str current-str)`; the shared contract both tasks rely on:
@@ -84,20 +84,22 @@ Pure tests for semver parsing/comparison (ordering, numeric-vs-lexicographic, ma
     - numeric, not lexicographic: min `"0.9.0"` vs current `"0.10.0"` does NOT throw.
     - malformed min (`"1.2"`, `"abc"`, `1.2` as a number) → throws `{:reason :config}` naming the expected format.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — the new functions don't exist yet.
 
-- [ ] **Step 3: Implement the helpers in `config.lg`**
+- [x] **Step 3: Implement the helpers in `config.lg`**
   - `parse-semver`: match `^(\d+)\.(\d+)\.(\d+)$`, return a vector of three ints or `nil`. Guard non-strings.
   - `check-min-version!`: no-op on `nil`; malformed → `config-error` like `":min-frame-version must be an exact semver string like \"0.3.0\", got <val>"`; compare parsed vectors component-wise (plain vector comparison of int vectors works if let-go supports it; otherwise compare the three components explicitly); too-old → `config-error` with message `template requires frame >= <min>, but this is frame <current> (upgrade frame)`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add semver parse and min-version check helpers"`
+
+> Deviation: codex review caught that `parse-long` returns nil on overflow, letting a huge component (e.g. `"999999999999999999999.0.0"`) bypass the check; `parse-semver` now rejects any nil component (fixup commit `a1f6f04`).
 
 ### Task 3: Wire the check and unknown-key warnings into read-config
 
@@ -105,7 +107,7 @@ Pure tests for semver parsing/comparison (ordering, numeric-vs-lexicographic, ma
 - Modify: `src/frame/config.lg`
 - Test: `test/frame/config_test.lg`
 
-- [ ] **Step 1: Write failing tests through `read-config`**
+- [x] **Step 1: Write failing tests through `read-config`**
   Using the existing `read-cfg`/`read-edn` helpers:
   - No `:min-frame-version` → config reads fine, `(:warnings r)` is `[]`.
   - `{:min-frame-version "0.0.1" :vars []}` → reads fine.
@@ -116,22 +118,22 @@ Pure tests for semver parsing/comparison (ordering, numeric-vs-lexicographic, ma
   - Non-keyword top-level keys (EDN allows them): `{:vars [] "stray" 1 42 "x"}` → reads fine, one warning per key — must not throw.
   - `reads-full-config` config (all known keys plus `:min-frame-version "0.0.1"`) → `:warnings` is `[]`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — no version check in `read-config`, no `:warnings` key.
 
-- [ ] **Step 3: Implement in `read-config`**
+- [x] **Step 3: Implement in `read-config`**
   - Define `known-keys` as `#{:description :root :vars :computed :raw :min-frame-version}` (private).
   - Require `frame.version`.
   - After the map check and before building the result map: `(check-min-version! (:min-frame-version raw) version/current)`.
   - Build `:warnings`: for each top-level key of `raw` not in `known-keys`, a string like `unrecognized key :extra-key in frame.edn`. Keys may be any EDN value, not just keywords — render and sort them via `pr-str` (never `name`, which throws on non-Named keys).
   - Add `:warnings` to the returned normalized map. Update the ns header comment describing the returned shape.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS, including all pre-existing config tests (they must not break from the added `:warnings` key).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: enforce :min-frame-version and collect unknown-key warnings in read-config"`
 
 ### Task 4: Print warnings in frame new
@@ -139,17 +141,17 @@ Pure tests for semver parsing/comparison (ordering, numeric-vs-lexicographic, ma
 **Files:**
 - Modify: `src/frame/new.lg`
 
-- [ ] **Step 1: Print warnings after reading config**
+- [x] **Step 1: Print warnings after reading config**
   In `run*`, immediately after `(config/read-config template-dir)`, print each warning to stderr:
   `frame: warning: <msg>` via `(write! *err* ...)`, matching the existing error-output style in `cmd-new!`. Warnings print before the project-name prompt so they are visible even if the user cancels.
 
-- [ ] **Step 2: Verify end-to-end by hand**
+- [x] **Step 2: Verify end-to-end by hand**
   Run: `lgx build`, then against a scratch template containing an unknown key and `:min-frame-version "0.0.1"`:
   - `bin/frame new --defaults <scratch-template> demo-app` (in a temp dir) → generation succeeds, stderr shows one `frame: warning: unrecognized key ...` line per unknown key.
   - Change the scratch template to `:min-frame-version "999.0.0"` → exits 1 with `frame: template requires frame >= 999.0.0, but this is frame 0.1.0 (upgrade frame)`.
   Clean up the scratch dirs afterwards.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "feat: print frame.edn warnings on stderr in frame new"`
 
 ### Task 5: Documentation and final checks

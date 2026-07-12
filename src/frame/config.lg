@@ -47,7 +47,8 @@
       (when (pos? (compare required (parse-semver current)))
         (config-error (str "template requires frame >= " min-version
                            ", but this is frame " current " (upgrade frame)")
-                      {:min-frame-version min-version :current current})))))
+                      {:min-frame-version min-version
+                       :current current})))))
 
 (defn- validate-var
   "Validate one :vars entry, returning it unchanged on success."
