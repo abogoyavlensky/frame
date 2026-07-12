@@ -50,7 +50,7 @@ frame new --var db=postgres,auth=false ./my-template my-app
 # Write somewhere other than ./my-app
 frame new --defaults --dir build/out ./my-template my-app
 
-# From a git URL (cloned and cached under ~/.frame)
+# From a git URL (cloned and cached under ~/.cache/frame)
 frame new https://github.com/owner/repo my-app
 ```
 
@@ -204,7 +204,7 @@ If two files render to the same destination and both survive, generation fails a
 
 ## Sources and caching
 
-- A `<source>` starting with `https://` must have the form `https://host/owner/repo` (an optional trailing `.git` is stripped). `frame` resolves the default-branch HEAD, clones it, and caches it under `~/.frame/templates/<host>/<owner>/<repo>/<sha>/`, reusing the cache on later runs. Set `FRAME_HOME` to override `~/.frame`.
+- A `<source>` starting with `https://` must have the form `https://host/owner/repo` (an optional trailing `.git` is stripped). `frame` resolves the default-branch HEAD, clones it, and caches it under `~/.cache/frame/templates/<host>/<owner>/<repo>/<sha>/` (honoring `XDG_CACHE_HOME`), reusing the cache on later runs. The cache is safe to delete — frame re-clones on the next use. Set `FRAME_HOME` to override the base directory; templates then live under `$FRAME_HOME/templates/...`.
 - Any other `://` scheme (`ssh://`, `git://`, `git@host:` shorthand) is rejected.
 - Anything else is a local directory path, used in place. This is the fast path for developing a template.
 

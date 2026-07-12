@@ -153,13 +153,13 @@ This is documented in `frame.paths` as a comment and here in the plan so the fut
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Update the caching docs**
+- [x] **Step 1: Update the caching docs**
   In `README.md`:
   - The "Sources and caching" bullet (~line 207): replace "caches it under `~/.frame/templates/...`, reusing the cache on later runs. Set `FRAME_HOME` to override `~/.frame`." with wording for the XDG cache dir: caches under `~/.cache/frame/templates/<host>/<owner>/<repo>/<sha>/` (honoring `XDG_CACHE_HOME`), reused on later runs; `FRAME_HOME` overrides the whole base (templates then live under `$FRAME_HOME/templates/...`). Mention the cache is safe to delete (it re-clones on next use).
   - The inline example comment (~line 53): change `# From a git URL (cloned and cached under ~/.frame)` to `# From a git URL (cloned and cached under ~/.cache/frame)`.
   Use /writing-clearly for the prose.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -m "docs: document XDG cache dir for downloaded templates"`
 
 ---
