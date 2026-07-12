@@ -78,8 +78,7 @@
         defaults? (boolean (:defaults? opts))
         dir (:dir opts)]
     (when (> (count name-args) 1)
-      (cli-error (str "unexpected extra arguments: " (str/join " " (rest name-args))
-                      " (options must come before <source>)")))
+      (cli-error (str "unexpected extra arguments: " (str/join " " (rest name-args)))))
     (let [cli-vars (parse-cli-vars (:var opts))
           template-dir (source/resolve-source! source-arg)
           cfg (config/read-config template-dir)]

@@ -7,7 +7,7 @@
   {:name "frame"
    :version version/current
    :doc "A declarative project templater."
-   :footer "Run 'frame new --help' for details. Options must come before <source>."
+   :footer "Run 'frame new --help' for details."
    :commands [{:name "new"
                :doc "Generate a project from a template."
                :args [{:key :source

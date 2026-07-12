@@ -53,7 +53,7 @@ frame new [options] <source> [name]
 
 `<source>` is a local directory path or an `https://host/owner/repo` git URL. `[name]` is the project name; omit it to be prompted. The name must match `^[a-z][a-z0-9-]*$`.
 
-**Options must come before `<source>`.**
+**Options**
 
 | Option | Effect |
 | --- | --- |
