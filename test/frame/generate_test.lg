@@ -53,6 +53,23 @@
         (is (= (get want k) (get got k)) (str "content mismatch: " k))))))
 
 ;; ---------------------------------------------------------------------------
+;; Empty files (e.g. .gitkeep) must generate as empty, not crash binary? sniff
+;; ---------------------------------------------------------------------------
+
+(deftest empty-file-generates-empty
+  (let [tpl (tmp-dir)
+        target (tmp-dir)]
+    (mkdir (str tpl "/template"))
+    (spit (str tpl "/frame.edn") "{:vars []}")
+    (spit (str tpl "/template/.gitkeep") "")
+    (let [cfg (config/read-config tpl)
+          res (threw #(generate/generate! tpl target {"project-name" "x"} cfg))]
+      (is (= :no-throw res) (str "generate threw: " (:msg res)))
+      (when (= :no-throw res)
+        (is (= "" (slurp (str target "/.gitkeep"))))))
+    (os/sh "rm" "-rf" tpl target)))
+
+;; ---------------------------------------------------------------------------
 ;; Answer-driven path/content selection
 ;; ---------------------------------------------------------------------------
 

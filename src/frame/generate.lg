@@ -50,9 +50,10 @@
       (str/join "/" rendered))))
 
 (defn- binary?
-  "Sniff the first 8000 chars for a null byte (code 0)."
+  "Sniff the first 8000 chars for a null byte (code 0). Empty content is text."
   [content]
-  (boolean (some zero? (map int (take 8000 (seq content))))))
+  (boolean (and (seq content)
+                (some zero? (map int (take 8000 (seq content)))))))
 
 (defn- raw-file? [config rel-src content]
   (or (some (fn [pat] (glob/matches? pat rel-src)) (:raw config))
