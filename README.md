@@ -4,6 +4,44 @@ A declarative project templater. `frame` scaffolds a new project from a git or l
 
 A template is a plain directory (or git repo) with a `frame.edn` config and a `template/` directory that mirrors the generated project one-to-one. All template logic lives in three declarative places: variables in `frame.edn`, tags in file contents, and tags in file and directory names. There is no code in templates.
 
+## Usage
+
+```
+brew install abogoyavlensky/tap/frame
+frame new <source> [name] [options]
+```
+
+`<source>` is a local directory path or an `https://host/owner/repo` git URL. `[name]` is the project name; omit it to be prompted. The name must match `^[a-z][a-z0-9-]*$`.
+
+**Options**
+
+| Option | Effect |
+| --- | --- |
+| `--defaults` | Answer every remaining question with its default. Requires `name` as the positional argument. |
+| `--dir <path>` | Write to this exact directory instead of `./<name>`. Does not change the `project-name` value used inside the template. |
+| `--var key=value[,key=value...]` | Pre-answer variables and skip their prompts. Booleans accept `true`/`false`. `project-name` is not allowed. |
+
+Examples:
+
+```bash
+# Interactive: prompts for the name and every variable
+frame new ./my-template
+
+# Non-interactive: name from the positional arg, everything else default
+frame new ./my-template my-app --defaults
+
+# Preset some answers, prompt for the rest
+frame new ./my-template my-app --var db=postgres,auth=false
+
+# Write somewhere other than ./my-app
+frame new ./my-template my-app --defaults --dir build/out
+
+# From a git URL (cloned and cached under ~/.cache/frame)
+frame new https://github.com/owner/repo my-app
+```
+
+On success `frame` prints the created-file count, the target directory, a summary of the declared template variables with the values that were used, and the next step. A resolution, configuration, or generation error prints `frame: <message>` and exits 1. Cancelling a prompt exits 1 and writes nothing. Invalid command-line syntax (an unknown option or a missing `<source>`) is reported by the argument parser and exits 2.
+
 ## Installation
 
 ### With [Homebrew](https://brew.sh)
@@ -32,55 +70,6 @@ Or pin a version in `.mise.toml`:
 Download the archive for your platform from the
 [releases page](https://github.com/abogoyavlensky/frame/releases), extract it, and put
 `frame` on your `PATH`:
-
-```sh
-VERSION=0.1.0
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')   # linux | darwin
-ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-curl -sSL -o frame.tar.gz \
-  "https://github.com/abogoyavlensky/frame/releases/download/v${VERSION}/frame_${VERSION}_${OS}_${ARCH}.tar.gz"
-tar -xzf frame.tar.gz
-mv frame ~/.local/bin/
-```
-
-To build from source instead, see [Development](#development).
-
-## Usage
-
-```
-frame new [options] <source> [name]
-```
-
-`<source>` is a local directory path or an `https://host/owner/repo` git URL. `[name]` is the project name; omit it to be prompted. The name must match `^[a-z][a-z0-9-]*$`.
-
-**Options**
-
-| Option | Effect |
-| --- | --- |
-| `--defaults` | Answer every remaining question with its default. Requires `name` as the positional argument. |
-| `--dir <path>` | Write to this exact directory instead of `./<name>`. Does not change the `project-name` value used inside the template. |
-| `--var key=value[,key=value...]` | Pre-answer variables and skip their prompts. Booleans accept `true`/`false`. `project-name` is not allowed. |
-
-Examples:
-
-```bash
-# Interactive: prompts for the name and every variable
-frame new ./my-template
-
-# Non-interactive: name from the positional arg, everything else default
-frame new --defaults ./my-template my-app
-
-# Preset some answers, prompt for the rest
-frame new --var db=postgres,auth=false ./my-template my-app
-
-# Write somewhere other than ./my-app
-frame new --defaults --dir build/out ./my-template my-app
-
-# From a git URL (cloned and cached under ~/.cache/frame)
-frame new https://github.com/owner/repo my-app
-```
-
-On success `frame` prints the created-file count, the target directory, a summary of the declared template variables with the values that were used, and the next step. A resolution, configuration, or generation error prints `frame: <message>` and exits 1. Cancelling a prompt exits 1 and writes nothing. Invalid command-line syntax (an unknown option or a missing `<source>`) is reported by the argument parser and exits 2.
 
 ## Writing a template
 
@@ -264,6 +253,11 @@ Fish:
 frame completion fish > ~/.config/fish/completions/frame.fish
 ```
 
+## Projects using frame
+
+- [clojure-stack-lite](https://github.com/abogoyavlensky/clojure-stack-lite)
+- [clojure-lib-template](https://github.com/abogoyavlensky/clojure-lib-template)
+
 ## Development
 
 Install dependencies with [mise](https://mise.jdx.dev/getting-started.html) (or read `.mise.toml` and install them manually):
@@ -282,3 +276,7 @@ lgx fmt                                                # format
 lgx lint                                               # lint
 lgx build                                              # build bin/frame
 ```
+
+## License
+
+MIT License. Copyright (c) 2026 Andrey Bogoyavlenskiy.
