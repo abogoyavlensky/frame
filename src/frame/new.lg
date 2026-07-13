@@ -73,33 +73,31 @@
 
 (defn- run* [ctx]
   (let [source-arg (get-in ctx [:args :source])
-        name-args (get-in ctx [:args :name-args])
+        project-name-arg (get-in ctx [:args :name])
         opts (:opts ctx)
         defaults? (boolean (:defaults? opts))
-        dir (:dir opts)]
-    (when (> (count name-args) 1)
-      (cli-error (str "unexpected extra arguments: " (str/join " " (rest name-args)))))
-    (let [cli-vars (parse-cli-vars (:var opts))
-          template-dir (source/resolve-source! source-arg)
-          cfg (config/read-config template-dir)]
-      ;; Before the name prompt, so warnings show even on a cancel.
-      (doseq [w (:warnings cfg)]
-        (write! *err* (str "frame: warning: " w "\n")))
-      (let [project-name (resolve-project-name! (first name-args) defaults?)]
-        (if (nil? project-name)
-          (os/exit 1) ;; cancelled at the name prompt
-          (let [target (if (str/blank? dir)
-                         (str (os/cwd) "/" project-name)
-                         dir)]
-            (validate-target! target)
-            (let [answers (if defaults?
-                            (prompt/resolve-answers cfg cli-vars {:defaults? true})
-                            (prompt/ask! cfg cli-vars {}))]
-              (if (nil? answers)
-                (os/exit 1) ;; cancelled at a var prompt
-                (let [final (prompt/compute-vars cfg (assoc answers "project-name" project-name))
-                      n (generate/generate! template-dir target final cfg)]
-                  (print-summary n project-name target cfg final))))))))))
+        dir (:dir opts)
+        cli-vars (parse-cli-vars (:var opts))
+        template-dir (source/resolve-source! source-arg)
+        cfg (config/read-config template-dir)]
+    ;; Before the name prompt, so warnings show even on a cancel.
+    (doseq [w (:warnings cfg)]
+      (write! *err* (str "frame: warning: " w "\n")))
+    (let [project-name (resolve-project-name! project-name-arg defaults?)]
+      (if (nil? project-name)
+        (os/exit 1) ;; cancelled at the name prompt
+        (let [target (if (str/blank? dir)
+                       (str (os/cwd) "/" project-name)
+                       dir)]
+          (validate-target! target)
+          (let [answers (if defaults?
+                          (prompt/resolve-answers cfg cli-vars {:defaults? true})
+                          (prompt/ask! cfg cli-vars {}))]
+            (if (nil? answers)
+              (os/exit 1) ;; cancelled at a var prompt
+              (let [final (prompt/compute-vars cfg (assoc answers "project-name" project-name))
+                    n (generate/generate! template-dir target final cfg)]
+                (print-summary n project-name target cfg final)))))))))
 
 (defn cmd-new!
   "tiny-cli handler for `frame new`. Catches all errors and reports them

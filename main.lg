@@ -11,9 +11,10 @@
    :commands [{:name "new"
                :doc "Generate a project from a template."
                :args [{:key :source
-                       :doc "Template source: a local directory or https://host/owner/repo."}]
-               :variadic {:key :name-args
-                          :doc "Project name (optional; prompted when omitted)."}
+                       :doc "Template source: a local directory or https://host/owner/repo."}
+                      {:key :name
+                       :optional? true
+                       :doc "Project name (optional; prompted when omitted)."}]
                :opts [{:key :defaults?
                        :long "defaults"
                        :doc "Answer every remaining question with its default."}
