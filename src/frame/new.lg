@@ -134,9 +134,15 @@
                           (prompt/ask! cfg cli-vars {}))]
             (if (nil? answers)
               (os/exit 1) ;; cancelled at a var prompt
-              (let [final (prompt/compute-vars cfg (assoc answers "project-name" project-name))
-                    n (generate/generate! template-dir target final cfg)]
-                (print-summary n project-name target cfg final)))))))))
+              (let [final (prompt/compute-vars cfg (assoc answers "project-name" project-name))]
+                ;; Re-check right before writing. The prompts above can block for
+                ;; input, during which a concurrent process could swap a file for a
+                ;; symlink/FIFO (TOCTOU). Re-running shrinks that window to the tiny
+                ;; scan->write gap; let-go lacks the primitives (O_NOFOLLOW, lstat)
+                ;; to close it entirely.
+                (validate-target! target force?)
+                (let [n (generate/generate! template-dir target final cfg)]
+                  (print-summary n project-name target cfg final))))))))))
 
 (defn cmd-new!
   "tiny-cli handler for `frame new`. Catches all errors and reports them
