@@ -74,3 +74,23 @@
     (is (some? msg))
     (is (some? (re-find #"--force" msg))))
   (is (nil? (new/target-error "t" {:dir? true} false true))))
+
+;; ---------------------------------------------------------------------------
+;; has-symlink?: force must not follow a link out of the target
+;; ---------------------------------------------------------------------------
+
+(defn- tmp-dir []
+  (str (os/temp-dir) "/frame-new-test-" (rand-int 100000000)))
+
+(deftest has-symlink-detects-links
+  (let [plain (tmp-dir)
+        linked (tmp-dir)
+        outside (tmp-dir)]
+    (mkdir plain)
+    (spit (str plain "/file.txt") "x")
+    (mkdir linked)
+    (mkdir outside)
+    (os/sh "ln" "-s" outside (str linked "/link"))
+    (is (false? (new/has-symlink? plain)))
+    (is (true? (new/has-symlink? linked)))
+    (os/sh "rm" "-rf" plain linked outside)))
