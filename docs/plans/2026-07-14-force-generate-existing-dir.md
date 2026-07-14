@@ -22,6 +22,8 @@ Generation itself (`src/frame/generate.lg`, `generate!`) already does the right 
 
 **Behavior with `--force`:** template files are written on top; a produced file that already exists is **overwritten**; a pre-existing file the template doesn't touch is **left untouched**; the directory is never removed.
 
+**Caveat (accepted, not handled here):** if a pre-existing entry's *type* conflicts with what the template needs — e.g. the target already has a *file* named `src` but the template writes `src/core.clj` (needs `src` to be a directory) — the underlying `mkdir`/`spit` raises a normal write error. Because `generate!` writes file-by-file with no pre-check against pre-existing target files, that can leave a **partial** result. This is a rare edge (only reachable now that `--force` allows a populated target) and is left as ordinary error behavior; a pre-write type-conflict check is out of scope (YAGNI).
+
 ### Key decisions
 
 1. **`--force` is a long-only boolean flag** (mirrors `--defaults`; no `-f`).
@@ -30,6 +32,7 @@ Generation itself (`src/frame/generate.lg`, `generate!`) already does the right 
 4. **Better error hint** when blocked: `target directory already exists and is not empty: <path> (use --force to write into it)`.
 5. **`print-summary` wording unchanged** ("Created N files…").
 6. **Refactor the gate into a pure `target-error` predicate** (`target × stat × dir-empty? × force? → message|nil`) so the branch logic is unit-testable with a clean truth table and no filesystem; `validate-target!` becomes a thin effectful wrapper that takes `force?`.
+7. **Link containment guard (added after codex P1s; user chose the "simple guard").** `--force` newly allows a *populated* target, which can contain links that make a template write escape the target (verified: a symlink is followed; a hard link shares an inode with an outside file — both bypass the lexical `unsafe-dst?` check). let-go's `os/stat` follows symlinks and exposes no link count, so `validate-target!` shells out to a single `find <target> ( -type l -o -type f -links +1 )` scan and **refuses `--force` when the target tree contains any symlink or hard-linked file**. The scan **fails closed** (a nonzero `find` exit → treated as unsafe) and prefixes a relative target with `./` so a dash-led `--dir` is scanned rather than misparsed as a find expression. Coarse but safe. `contains-links?` is public + unit-tested (symlink, hard link, fail-closed).
 
 ### Testing strategy
 
@@ -60,7 +63,11 @@ Frame's `lgx.edn` pins tiny-cli at `:git/tag "v0.2.3"`, a tag that currently exi
 - Modify: `src/frame/new.lg`
 - Test: `test/frame/new_test.lg`
 
-- [ ] **Step 1: Write failing unit tests**
+> Deviation: Task 1 is the whole production change; Task 2 only adds a behavioral test and Tasks 3–4 are docs/verify. Running review-with-codex once over Tasks 1–2 (code + tests complete) rather than per-task.
+>
+> Deviation (codex P1s + user decision): the codex reviews found — and I reproduced — three containment escapes `--force` enabled: (a) a pre-existing symlink in the target, (b) a pre-existing hard link to an outside file (`spit` truncates the shared inode), and (c) a dash-led `--dir` that made the `find` scan silently error and pass. Added a link-containment guard (`contains-links?` via one `find ( -type l -o -type f -links +1 )` scan; fails closed; `./`-prefixes relative paths) that refuses `--force` when the target holds any symlink or hard-linked file — an in-spirit extension of the user's "simple guard" choice. Commits `63ddfd5` (initial symlink guard) + `a5e9c20` (hard-link/fail-closed/dash-led hardening). Verified via the binary that all three vectors are blocked and outside files are untouched, and the normal populated-dir happy path still succeeds. See design decision 7.
+
+- [x] **Step 1: Write failing unit tests**
   In `new_test.lg`, add a `deftest` calling `new/target-error` (a new public fn) as a pure truth table — no filesystem:
   - `(new/target-error "t" nil true false)` → nil (absent target).
   - `(new/target-error "t" nil true true)` → nil.
@@ -70,11 +77,11 @@ Frame's `lgx.edn` pins tiny-cli at `:git/tag "v0.2.3"`, a tag that currently exi
   - `(new/target-error "t" {:dir? true} false false)` → non-nil, message matches `#"--force"`.
   - `(new/target-error "t" {:dir? true} false true)` → nil (non-empty + force).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL (`target-error` is undefined / unresolved var).
 
-- [ ] **Step 3: Implement `target-error` + refactor `validate-target!`**
+- [x] **Step 3: Implement `target-error` + refactor `validate-target!`**
   In `src/frame/new.lg`, add the pure predicate and rewrite `validate-target!` to take `force?`. Use these shapes so the tests match exactly:
   ```clojure
   (defn target-error
@@ -101,7 +108,7 @@ Frame's `lgx.edn` pins tiny-cli at `:git/tag "v0.2.3"`, a tag that currently exi
   ```
   The `or` short-circuits so `os/ls` runs only on an existing directory.
 
-- [ ] **Step 4: Wire `--force` through `run*` and `main.lg`**
+- [x] **Step 4: Wire `--force` through `run*` and `main.lg`**
   - In `run*`, bind `force? (boolean (:force? opts))` and call `(validate-target! target force?)`.
   - In `main.lg`, add to `new`'s `:opts`:
     ```clojure
@@ -110,11 +117,11 @@ Frame's `lgx.edn` pins tiny-cli at `:git/tag "v0.2.3"`, a tag that currently exi
      :doc "Generate into the target directory even if it already contains files (overwrites on collision)."}
     ```
 
-- [ ] **Step 5: Run checks to verify they pass**
+- [x] **Step 5: Run checks to verify they pass**
   Run: `lgx fmt check && lgx lint && lgx test`
   Expected: PASS, 0 lint warnings.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -am "feat: add --force to generate into an existing directory"`
 
 ## Task 2: Behavioral write-on-top test
@@ -122,7 +129,7 @@ Frame's `lgx.edn` pins tiny-cli at `:git/tag "v0.2.3"`, a tag that currently exi
 **Files:**
 - Test: `test/frame/generate_test.lg`
 
-- [ ] **Step 1: Write the behavioral test**
+- [x] **Step 1: Write the behavioral test**
   In `generate_test.lg`, add a `deftest` (reuse the file's `tmp-dir` helper). Build a minimal template with a colliding file, pre-populate the target with one unrelated and one colliding file, run `generate!`, and assert:
   ```clojure
   ;; template: template/README.md -> "from-template"; frame.edn {:vars []}
@@ -133,11 +140,11 @@ Frame's `lgx.edn` pins tiny-cli at `:git/tag "v0.2.3"`, a tag that currently exi
   ```
   Clean up with `(os/sh "rm" "-rf" tpl target)`. (This exercises `generate!` directly, which does not gate on non-empty — it documents the write-on-top semantics `--force` unlocks.)
 
-- [ ] **Step 2: Run tests to verify pass**
+- [x] **Step 2: Run tests to verify pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -am "test: cover write-on-top generation into an existing dir"`
 
 ## Task 3: Document `--force`
@@ -145,7 +152,7 @@ Frame's `lgx.edn` pins tiny-cli at `:git/tag "v0.2.3"`, a tag that currently exi
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Add the options row and an example**
+- [x] **Step 1: Add the options row and an example**
   In the `frame new` Options table (around `README.md:22`), add:
   ```
   | `--force` | Generate into the target directory even when it already contains files. Existing files with the same path are overwritten; other files are left untouched; the directory is never removed. |
@@ -157,32 +164,35 @@ Frame's `lgx.edn` pins tiny-cli at `:git/tag "v0.2.3"`, a tag that currently exi
   ```
   Use /writing-clearly.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -am "docs: document frame new --force"`
 
 ## Task 4: Verify end to end
 
 **Files:** none (manual verification).
 
-- [ ] **Step 1: Build the binary**
+- [x] **Step 1: Build the binary**
   Run: `lgx build`
   Expected: builds `bin/frame`.
 
-- [ ] **Step 2: Drive the flag against an existing non-empty dir**
-  Use a scratch dir with a pre-existing file:
+- [x] **Step 2: Drive the flag against an existing non-empty dir**
+  Pre-populate a temp dir with both an *unrelated* file and one that *collides* with a template output (README.md), so the e2e checks preservation AND overwrite:
   ```bash
-  DIR=<scratchpad>/force-verify
-  rm -rf "$DIR"; mkdir -p "$DIR"; printf keep > "$DIR/keep.txt"
+  DIR=$(mktemp -d)
+  printf keep > "$DIR/keep.txt"
+  printf old-content > "$DIR/README.md"
   TMPL=test/frame/fixtures/demo-template
   bin/frame new "$TMPL" myproj --defaults --dir "$DIR";          echo "exit=$?"   # expect frame: ... not empty, exit 1
   bin/frame new "$TMPL" myproj --defaults --dir "$DIR" --force;  echo "exit=$?"   # expect success, exit 0
   cat "$DIR/keep.txt"    # expect: keep  (unrelated file preserved)
+  cat "$DIR/README.md"   # expect the template's README content, NOT "old-content" (colliding file overwritten)
   find "$DIR" -type f | head    # expect template files present alongside keep.txt
+  rm -rf "$DIR"
   ```
-  Confirm: without `--force` it errors "not empty" (exit 1) and writes nothing; with `--force` it succeeds, `keep.txt` survives, and template files are generated on top.
+  Confirm: without `--force` it errors "not empty" (exit 1) and writes nothing; with `--force` it succeeds, `keep.txt` survives, README.md is overwritten, and template files are generated on top.
 
-- [ ] **Step 3: Full suite + help**
+- [x] **Step 3: Full suite + help**
   Run: `lgx test` (full suite green) and `bin/frame new --help` (confirm `--force` appears in the options).
 
-- [ ] **Step 4: Commit any fixups**
+- [x] **Step 4: Commit any fixups**
   If verification surfaced fixes, commit them; otherwise no commit.

@@ -20,7 +20,7 @@ frame new <source> [name] [options]
 | `--defaults` | Answer every remaining question with its default. Requires `name` as the positional argument. |
 | `--dir <path>` | Write to this exact directory instead of `./<name>`. Does not change the `project-name` value used inside the template. |
 | `--var key=value[,key=value...]` | Pre-answer variables and skip their prompts. Booleans accept `true`/`false`. `project-name` is not allowed. |
-| `--force` | Generate into the target directory even when it already contains files. Colliding files are overwritten; other files are left untouched and the directory is never removed. Refused when the target contains a symlink (to avoid writing outside it). |
+| `--force` | Generate into the target directory even when it already contains files. Colliding files are overwritten; other files are left untouched and the directory is never removed. Refused when the target contains a symlink or a hard-linked file, so generation can't write outside it. |
 
 Examples:
 
