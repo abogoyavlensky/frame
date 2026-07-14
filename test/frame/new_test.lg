@@ -76,31 +76,38 @@
   (is (nil? (new/target-error "t" {:dir? true} false true))))
 
 ;; ---------------------------------------------------------------------------
-;; contains-links?: force must not follow a symlink or hard link out of target
+;; contains-unsafe-entry?: --force must refuse symlinks, hard links, and
+;; special files (FIFO/socket/device) in the target
 ;; ---------------------------------------------------------------------------
 
 (defn- tmp-dir []
   (str (os/temp-dir) "/frame-new-test-" (rand-int 100000000)))
 
-(deftest contains-links-detects-symlinks-hardlinks-and-fails-closed
+(deftest contains-unsafe-entry-detects-links-specials-and-fails-closed
   (let [plain (tmp-dir)
         symd (tmp-dir)
         hard (tmp-dir)
+        fifod (tmp-dir)
         outside (tmp-dir)]
     (mkdir outside)
     (spit (str outside "/victim") "secret")
+    ;; plain dir with a nested regular file is safe
     (mkdir plain)
-    (spit (str plain "/file.txt") "x")
+    (mkdir (str plain "/sub"))
+    (spit (str plain "/sub/file.txt") "x")
+    ;; symlink
     (mkdir symd)
     (os/sh "ln" "-s" outside (str symd "/link"))
+    ;; hard link to an outside file
     (mkdir hard)
-    (os/sh "ln" (str outside "/victim") (str hard "/README.md")) ; hard link, no -s
-    ;; plain dir with only a regular file is safe
-    (is (false? (new/contains-links? plain)))
-    ;; a symlink anywhere in the tree is unsafe
-    (is (true? (new/contains-links? symd)))
-    ;; a hard-linked regular file is unsafe (shares an inode outside the target)
-    (is (true? (new/contains-links? hard)))
+    (os/sh "ln" (str outside "/victim") (str hard "/README.md"))
+    ;; FIFO / special file
+    (mkdir fifod)
+    (os/sh "mkfifo" (str fifod "/pipe"))
+    (is (false? (new/contains-unsafe-entry? plain)))
+    (is (true? (new/contains-unsafe-entry? symd)))
+    (is (true? (new/contains-unsafe-entry? hard)))
+    (is (true? (new/contains-unsafe-entry? fifod)))
     ;; fail closed: an unscannable path counts as unsafe
-    (is (true? (new/contains-links? "/nonexistent-frame-xyz-123")))
-    (os/sh "rm" "-rf" plain symd hard outside)))
+    (is (true? (new/contains-unsafe-entry? "/nonexistent-frame-xyz-123")))
+    (os/sh "rm" "-rf" plain symd hard fifod outside)))
