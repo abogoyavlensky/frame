@@ -76,21 +76,31 @@
   (is (nil? (new/target-error "t" {:dir? true} false true))))
 
 ;; ---------------------------------------------------------------------------
-;; has-symlink?: force must not follow a link out of the target
+;; contains-links?: force must not follow a symlink or hard link out of target
 ;; ---------------------------------------------------------------------------
 
 (defn- tmp-dir []
   (str (os/temp-dir) "/frame-new-test-" (rand-int 100000000)))
 
-(deftest has-symlink-detects-links
+(deftest contains-links-detects-symlinks-hardlinks-and-fails-closed
   (let [plain (tmp-dir)
-        linked (tmp-dir)
+        symd (tmp-dir)
+        hard (tmp-dir)
         outside (tmp-dir)]
+    (mkdir outside)
+    (spit (str outside "/victim") "secret")
     (mkdir plain)
     (spit (str plain "/file.txt") "x")
-    (mkdir linked)
-    (mkdir outside)
-    (os/sh "ln" "-s" outside (str linked "/link"))
-    (is (false? (new/has-symlink? plain)))
-    (is (true? (new/has-symlink? linked)))
-    (os/sh "rm" "-rf" plain linked outside)))
+    (mkdir symd)
+    (os/sh "ln" "-s" outside (str symd "/link"))
+    (mkdir hard)
+    (os/sh "ln" (str outside "/victim") (str hard "/README.md")) ; hard link, no -s
+    ;; plain dir with only a regular file is safe
+    (is (false? (new/contains-links? plain)))
+    ;; a symlink anywhere in the tree is unsafe
+    (is (true? (new/contains-links? symd)))
+    ;; a hard-linked regular file is unsafe (shares an inode outside the target)
+    (is (true? (new/contains-links? hard)))
+    ;; fail closed: an unscannable path counts as unsafe
+    (is (true? (new/contains-links? "/nonexistent-frame-xyz-123")))
+    (os/sh "rm" "-rf" plain symd hard outside)))

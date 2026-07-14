@@ -36,13 +36,19 @@
          " (use --force to write into it)")
     :else nil))
 
-(defn has-symlink?
-  "True when the directory tree rooted at `dir` contains any symlink. Used to
-   keep --force from following a link out of the target. let-go's os/stat
-   follows symlinks and there is no lstat, so this shells out to `find`."
+(defn contains-links?
+  "True when the tree rooted at `dir` holds a symlink or a hard-linked regular
+   file — either lets a forced write escape the target (a symlink is followed;
+   a hard link shares an inode with a file elsewhere). let-go's os/stat follows
+   symlinks and exposes no link count, so this shells out to `find`. Fails
+   closed: a nonzero `find` exit (e.g. an unscannable path) counts as unsafe. A
+   relative `dir` is prefixed with `./` so a dash-led target is read as a path,
+   not a find expression."
   [dir]
-  (let [r (os/sh "find" dir "-type" "l")]
-    (boolean (seq (str/trim (:out r))))))
+  (let [safe (if (str/starts-with? dir "/") dir (str "./" dir))
+        r (os/sh "find" safe "(" "-type" "l" "-o" "-type" "f" "-links" "+1" ")")]
+    (or (not (zero? (:exit r)))
+        (boolean (seq (str/trim (:out r)))))))
 
 (defn- validate-target! [target force?]
   (let [stat (os/stat target)
@@ -51,11 +57,12 @@
                        (empty? (os/ls target)))]
     (when-let [msg (target-error target stat dir-empty? force?)]
       (cli-error msg))
-    ;; --force writes into a populated dir. Refuse if it contains a symlink: a
-    ;; template path could traverse the link and write outside the target.
-    (when (and force? (not dir-empty?) (has-symlink? target))
-      (cli-error (str "target contains a symlink; refusing to generate with --force"
-                      " (a template could write outside the target): " target)))
+    ;; --force writes into a populated dir. Refuse if it holds a symlink or a
+    ;; hard-linked file: either could make a template write outside the target.
+    (when (and force? (not dir-empty?) (contains-links? target))
+      (cli-error (str "target contains a symlink or hard-linked file; refusing to"
+                      " generate with --force (it could write outside the target): "
+                      target)))
     target))
 
 (defn- parse-cli-vars [var-str]
