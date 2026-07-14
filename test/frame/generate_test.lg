@@ -208,3 +208,25 @@
       (is (str/includes? (:msg r) "bad.txt:2"))
       (is (not (file-exists? target)))
       (os/sh "rm" "-rf" tpl))))
+
+;; ---------------------------------------------------------------------------
+;; Write-on-top: generating into a populated dir overwrites colliding files
+;; and preserves untouched ones (the semantics --force unlocks)
+;; ---------------------------------------------------------------------------
+
+(deftest write-on-top-preserves-existing-and-overwrites-collisions
+  (let [tpl (tmp-dir)
+        target (tmp-dir)]
+    (mkdir (str tpl "/template"))
+    (spit (str tpl "/frame.edn") (pr-str {:vars []}))
+    (spit (str tpl "/template/README.md") "from-template")
+    ;; Pre-populate the target: one unrelated file and one that collides.
+    (mkdir target)
+    (spit (str target "/keep.txt") "keep-me")
+    (spit (str target "/README.md") "old-content")
+    (let [cfg (config/read-config tpl)]
+      (generate/generate! tpl target {"project-name" "x"} cfg)
+      ;; Unrelated file survives; colliding file is overwritten.
+      (is (= "keep-me" (slurp (str target "/keep.txt"))))
+      (is (= "from-template" (slurp (str target "/README.md"))))
+      (os/sh "rm" "-rf" tpl target))))
