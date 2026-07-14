@@ -22,7 +22,9 @@ Generation itself (`src/frame/generate.lg`, `generate!`) already does the right 
 
 **Behavior with `--force`:** template files are written on top; a produced file that already exists is **overwritten**; a pre-existing file the template doesn't touch is **left untouched**; the directory is never removed.
 
-**Caveat (accepted, not handled here):** if a pre-existing entry's *type* conflicts with what the template needs — e.g. the target already has a *file* named `src` but the template writes `src/core.clj` (needs `src` to be a directory) — the underlying `mkdir`/`spit` raises a normal write error. Because `generate!` writes file-by-file with no pre-check against pre-existing target files, that can leave a **partial** result. This is a rare edge (only reachable now that `--force` allows a populated target) and is left as ordinary error behavior; a pre-write type-conflict check is out of scope (YAGNI).
+**Caveat 1 (accepted):** if a pre-existing entry's *type* conflicts with what the template needs — e.g. the target already has a *file* named `src` but the template writes `src/core.clj` (needs `src` to be a directory) — the underlying `mkdir`/`spit` raises a normal write error. Because `generate!` writes file-by-file with no pre-check against pre-existing target files, that can leave a **partial** result. Rare edge, left as ordinary error behavior (YAGNI).
+
+**Caveat 2 (residual TOCTOU, mitigated not eliminated):** the containment scan runs, then variable prompts may block for input, then generation writes. A concurrent process with write access to the target could swap a plain file for a symlink/hard link/FIFO during the prompt window. Mitigation: the scan is **re-run immediately before `generate!`**, shrinking the exploitable window from indefinite prompt time to the microsecond scan→write gap. It cannot be closed entirely — let-go's fs primitives lack `O_NOFOLLOW`/lstat/atomic-safe-write — so a same-machine attacker who already has write access to your target and can win a microsecond race is out of scope.
 
 ### Key decisions
 
@@ -196,3 +198,39 @@ Frame's `lgx.edn` pins tiny-cli at `:git/tag "v0.2.3"`, a tag that currently exi
 
 - [x] **Step 4: Commit any fixups**
   If verification surfaced fixes, commit them; otherwise no commit.
+
+---
+
+## Completion Summary
+
+**Status: COMPLETE.** All commits are local on `master` (not pushed).
+
+### What was implemented
+`frame new --force` generates into an existing non-empty directory, writing template files on top: colliding files are overwritten, untouched files are preserved, the directory is never removed.
+
+- `b0e3ebf` — `--force` flag + pure `target-error` gate + `validate-target!(force?)` + unit truth-table.
+- `514167b` — behavioral write-on-top test at the `generate!` level.
+- `63ddfd5` → `a5e9c20` → `07693a0` — containment guard, hardened over three review rounds (see below).
+- `2a48f9c` — re-check containment right before the write (TOCTOU window mitigation).
+- `f598d87`, `fde1e88`, `63039ef` — README + plan docs.
+
+### The security thread (four codex rounds)
+`--force` newly lets a *populated* target influence where writes land. Each review round found — and I reproduced — a way to escape or hang, fixed in turn, then generalized:
+1. **Symlink** in target → template write followed it outside the target.
+2. **Hard link** to an outside file → `spit` truncated the shared inode.
+3. **Dash-led `--dir`** → the `find` scan silently errored and passed (fixed: fail-closed + `./` prefix).
+4. **FIFO** at a template path → `spit` would hang forever.
+
+Final guard (`contains-unsafe-entry?`): one `find <target> ( ! -type d ! -type f -o -type f -links +1 )` scan refuses `--force` when the target holds anything but plain files/dirs (any special entry or hard-linked file); fails closed; path-safe. Verified via the binary that all four vectors are refused (no hang, outside files untouched) and the normal populated-dir happy path still succeeds.
+
+### Verification
+- `lgx test`: 159 tests / 296 assertions, 0 failures. Lint + fmt clean.
+- e2e (built binary): refuse-without-force (exit 1) / success-with-force (exit 0) / unrelated-preserved / colliding-overwritten / symlink+hardlink+FIFO+dash-led all refused / `--help` shows `--force`.
+
+### Deviations & open items
+- **Scope grew** well beyond the planned "small contained change": a full containment guard (4 fix commits) driven by codex review. Done in-spirit with the user's "simple guard" choice (refuse suspicious targets), but the user should sanity-check the added surface.
+- **Residual TOCTOU (mitigated, not eliminated):** a same-machine attacker with write access to the target who wins a microsecond scan→write race could still escape. Cannot be closed with let-go's fs primitives (no `O_NOFOLLOW`/lstat/atomic-safe write). Documented; **I stopped the review-hardening loop here** rather than chase unfixable variants.
+- **Not pushed:** all commits local, per the standing "don't push" context; frame still pins tiny-cli at the local-only `v0.2.3` tag.
+
+### What the plan could have specified better
+The plan treated `--force` as a pure gate-relaxation and never considered that allowing a *populated, possibly-adversarial* target is a security boundary. A one-line "what can a hostile target directory do?" threat check in the design would have surfaced the symlink/hard-link/FIFO/TOCTOU class up front instead of across four review rounds — worth adding to the plan template for any feature that widens what untrusted inputs (remote templates, existing dirs) can influence.
