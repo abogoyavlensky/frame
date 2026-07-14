@@ -25,7 +25,10 @@
                       {:key :var
                        :long "var"
                        :value? true
-                       :doc "Preset vars: key=value[,key=value...] (skips their prompts)."}]
+                       :doc "Preset vars: key=value[,key=value...] (skips their prompts)."}
+                      {:key :force?
+                       :long "force"
+                       :doc "Generate into the target directory even if it already contains files (overwrites on collision)."}]
                :run new/cmd-new!}]})
 
 (defn- main []

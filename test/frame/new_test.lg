@@ -52,3 +52,25 @@
   (is (= ["Variables:"
           "  author: "]
          (new/var-summary-lines [(nth demo-vars 2)] {"author" ""}))))
+
+;; ---------------------------------------------------------------------------
+;; target-error: pure gate for whether a target dir may be generated into
+;; ---------------------------------------------------------------------------
+
+(deftest target-error-absent-is-ok
+  (is (nil? (new/target-error "t" nil true false)))
+  (is (nil? (new/target-error "t" nil true true))))
+
+(deftest target-error-file-always-fails
+  (is (some? (re-find #"not a directory" (new/target-error "t" {:dir? false} true false))))
+  ;; a file target is an error even under --force
+  (is (some? (re-find #"not a directory" (new/target-error "t" {:dir? false} true true)))))
+
+(deftest target-error-empty-dir-is-ok
+  (is (nil? (new/target-error "t" {:dir? true} true false))))
+
+(deftest target-error-nonempty-dir-needs-force
+  (let [msg (new/target-error "t" {:dir? true} false false)]
+    (is (some? msg))
+    (is (some? (re-find #"--force" msg))))
+  (is (nil? (new/target-error "t" {:dir? true} false true))))

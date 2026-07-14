@@ -23,13 +23,27 @@
                     " (start with a letter; lowercase letters, digits, and hyphens only)")))
   name)
 
-(defn- validate-target! [target]
-  (let [stat (os/stat target)]
-    (cond
-      (nil? stat) target
-      (not (:dir? stat)) (cli-error (str "target exists and is not a directory: " target))
-      (seq (os/ls target)) (cli-error (str "target directory already exists and is not empty: " target))
-      :else target)))
+(defn target-error
+  "Message describing why target can't be generated into, or nil when writable.
+   `stat` is (os/stat target) — nil when absent; `dir-empty?` whether an existing
+   target dir has no entries; `force?` the --force flag."
+  [target stat dir-empty? force?]
+  (cond
+    (nil? stat) nil
+    (not (:dir? stat)) (str "target exists and is not a directory: " target)
+    (and (not dir-empty?) (not force?))
+    (str "target directory already exists and is not empty: " target
+         " (use --force to write into it)")
+    :else nil))
+
+(defn- validate-target! [target force?]
+  (let [stat (os/stat target)
+        dir-empty? (or (nil? stat)
+                       (not (:dir? stat))
+                       (empty? (os/ls target)))]
+    (when-let [msg (target-error target stat dir-empty? force?)]
+      (cli-error msg))
+    target))
 
 (defn- parse-cli-vars [var-str]
   (if (str/blank? var-str)
@@ -76,6 +90,7 @@
         project-name-arg (get-in ctx [:args :name])
         opts (:opts ctx)
         defaults? (boolean (:defaults? opts))
+        force? (boolean (:force? opts))
         dir (:dir opts)
         cli-vars (parse-cli-vars (:var opts))
         template-dir (source/resolve-source! source-arg)
@@ -89,7 +104,7 @@
         (let [target (if (str/blank? dir)
                        (str (os/cwd) "/" project-name)
                        dir)]
-          (validate-target! target)
+          (validate-target! target force?)
           (let [answers (if defaults?
                           (prompt/resolve-answers cfg cli-vars {:defaults? true})
                           (prompt/ask! cfg cli-vars {}))]
