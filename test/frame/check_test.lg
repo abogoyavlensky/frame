@@ -1,0 +1,161 @@
+(ns frame.check-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.check :as check]
+            [frame.config :as config]
+            [string :as str]))
+
+(def ^:private demo-template "test/frame/fixtures/demo-template")
+
+(defn- tmp-dir []
+  (str (os/temp-dir) "/frame-check-test-" (rand-int 100000000)))
+
+(defn- mk-template
+  "Write frame.edn (from the map `cfg`) and template files ({rel-path content})
+   into a throwaway dir. Returns the dir."
+  [cfg files]
+  (let [dir (tmp-dir)]
+    (mkdir (str dir "/template"))
+    (spit (str dir "/frame.edn") (pr-str cfg))
+    (doseq [[rel content] files]
+      (spit (str dir "/template/" rel) content))
+    dir))
+
+(def ^:private db-var
+  {:key :db
+   :prompt "Database"
+   :type :enum
+   :options ["sqlite" "postgres"]
+   :default "sqlite"})
+
+(def ^:private auth-var
+  {:key :auth
+   :prompt "Auth?"
+   :type :boolean
+   :default false})
+
+(defn- cfg-of [vars]
+  {:vars (config/normalize-vars vars)})
+
+;; ---------------------------------------------------------------------------
+;; combinations
+;; ---------------------------------------------------------------------------
+
+(deftest combinations-enum-times-boolean-in-declared-order
+  (is (= [{"db" "sqlite"
+           "auth" true}
+          {"db" "sqlite"
+           "auth" false}
+          {"db" "postgres"
+           "auth" true}
+          {"db" "postgres"
+           "auth" false}]
+         (check/combinations (cfg-of [db-var auth-var])))))
+
+(def ^:private frontend-vars
+  [{:key :frontend
+    :prompt "Frontend"
+    :type :enum
+    :options ["htmx" "react" "none" "re-frame"]
+    :default "htmx"}
+   {:key :auth
+    :prompt "Auth?"
+    :type :boolean
+    :default false
+    :when "frontend == htmx"}
+   {:key :flavor
+    :prompt "Flavor"
+    :type :enum
+    :options ["reagent" "uix"]
+    :default "reagent"
+    :when "frontend == re-frame"}
+   {:key :ssr
+    :prompt "SSR?"
+    :type :boolean
+    :default false
+    :when "flavor != uix"}
+   {:key :daisyui
+    :prompt "DaisyUI?"
+    :type :boolean
+    :default false
+    :when "frontend != none"}])
+
+(deftest combinations-skip-inapplicable-vars-without-duplicates
+  (let [combos (check/combinations (cfg-of frontend-vars))
+        by-fe (group-by (fn [c] (get c "frontend")) combos)]
+    ;; htmx: auth 2 x daisyui 2; react: 1 x 2; none: 1 x 1
+    (is (= 4 (count (get by-fe "htmx"))))
+    (is (= 2 (count (get by-fe "react"))))
+    (is (= 1 (count (get by-fe "none"))))
+    ;; re-frame: flavor reagent -> ssr 2, uix -> ssr skipped 1; x daisyui 2
+    (is (= 6 (count (get by-fe "re-frame"))))
+    (is (= 13 (count combos)))
+    (is (= (count combos) (count (set combos))))))
+
+(deftest combinations-skipped-vars-carry-skipped-values
+  (let [c (first (filter (fn [c] (= "none" (get c "frontend")))
+                         (check/combinations (cfg-of frontend-vars))))]
+    (is (= false (get c "auth")))
+    (is (= "" (get c "flavor")))
+    (is (= false (get c "ssr")))
+    (is (= false (get c "daisyui")))))
+
+(deftest combinations-string-var-uses-default-or-example
+  (is (= [{"who" "example"}]
+         (check/combinations (cfg-of [{:key :who
+                                       :prompt "Who"
+                                       :type :string}]))))
+  (is (= [{"who" "example"}]
+         (check/combinations (cfg-of [{:key :who
+                                       :prompt "Who"
+                                       :type :string
+                                       :default ""}]))))
+  (is (= [{"who" "ann"}]
+         (check/combinations (cfg-of [{:key :who
+                                       :prompt "Who"
+                                       :type :string
+                                       :default "ann"}])))))
+
+;; ---------------------------------------------------------------------------
+;; check-template
+;; ---------------------------------------------------------------------------
+
+(deftest check-template-demo-is-clean
+  (let [r (check/check-template demo-template (config/read-config demo-template))]
+    (is (= 4 (count (:combinations r))))
+    (is (= [] (:errors r)))
+    (is (= [] (:never-generated r)))))
+
+(deftest check-template-groups-errors-by-message
+  (let [dir (mk-template {:vars [db-var auth-var]}
+                         {"README.md" "ok"
+                          "{% if auth %}a.txt{% endif %}" "{{ missing }}"})
+        r (check/check-template dir (config/read-config dir))]
+    (os/sh "rm" "-rf" dir)
+    (is (= 4 (count (:combinations r))))
+    (is (= 1 (count (:errors r))))
+    (let [e (first (:errors r))]
+      (is (= 2 (:count e)))
+      (is (str/includes? (:message e) "{% if auth %}a.txt{% endif %}:1"))
+      (is (str/includes? (:message e) "unresolved variable"))
+      (is (= true (get (:example e) "auth"))))
+    ;; unknown while combinations are failing
+    (is (= [] (:never-generated r)))))
+
+(deftest check-template-reports-never-generated-files
+  (let [dir (mk-template {:vars [db-var]}
+                         {"README.md" "ok"
+                          "{% if db == mysql %}x.sql{% endif %}" "select 1"})
+        r (check/check-template dir (config/read-config dir))]
+    (os/sh "rm" "-rf" dir)
+    (is (= [] (:errors r)))
+    (is (= ["{% if db == mysql %}x.sql{% endif %}"] (:never-generated r)))))
+
+(deftest check-template-reports-broken-next-steps
+  (let [dir (mk-template {:vars [db-var]
+                          :next-steps ["go {{ nope }}"]}
+                         {"README.md" "ok"})
+        r (check/check-template dir (config/read-config dir))]
+    (os/sh "rm" "-rf" dir)
+    (is (= 1 (count (:errors r))))
+    (is (= 2 (:count (first (:errors r)))))
+    (is (str/includes? (:message (first (:errors r))) "unresolved variable"))))

@@ -1,0 +1,96 @@
+(ns frame.check
+  (:require [frame.generate :as generate]
+            [frame.new :as new]
+            [frame.prompt :as prompt]
+            [string :as str]))
+
+;; ---------------------------------------------------------------------------
+;; `frame check`: render the template in memory for every valid combination of
+;; answers and report what breaks. Never writes files.
+;; ---------------------------------------------------------------------------
+
+(def ^:private check-project-name "example-app")
+
+;; ---------------------------------------------------------------------------
+;; Enumeration
+;; ---------------------------------------------------------------------------
+
+(defn- branches
+  "The values one applicable var takes across combinations."
+  [var]
+  (case (:type var)
+    :enum (:options var)
+    :boolean [true false]
+    :string [(if (str/blank? (:default var)) "example" (:default var))]))
+
+(defn- walk-vars [vars answers skipped]
+  (if (empty? vars)
+    [answers]
+    (let [var (first vars)
+          skey (name (:key var))]
+      (if (prompt/applies? var answers skipped)
+        (mapcat (fn [v] (walk-vars (rest vars) (assoc answers skey v) skipped))
+                (branches var))
+        (walk-vars (rest vars) (assoc answers skey (prompt/skipped-value var)) (conj skipped skey))))))
+
+(defn combinations
+  "Every valid combination of answers, as string-keyed maps, depth-first over
+   the vars in declared order. A var skipped by :when contributes its skipped
+   value and a single branch, so there are no duplicates."
+  [config]
+  (vec (walk-vars (:vars config) {} #{})))
+
+;; ---------------------------------------------------------------------------
+;; Rendering every combination
+;; ---------------------------------------------------------------------------
+
+(defn- check-one
+  "Render one combination. Returns {:srcs [source paths generated]} or
+   {:error message}."
+  [repo-dir config answers]
+  (let [res (try {:ok (let [vars (prompt/compute-vars
+                                   config
+                                   (assoc answers "project-name" check-project-name))
+                            entries (generate/render-entries repo-dir vars config)]
+                        (new/next-steps-lines config vars check-project-name)
+                        (mapv :src entries))}
+                 (catch e {:err (ex-message e)}))]
+    (if (contains? res :err)
+      {:error (:err res)}
+      {:srcs (:ok res)})))
+
+(defn- group-errors
+  "Group failures by message, in first-seen order: [{:message :count :example}]."
+  [failures]
+  (let [order (distinct (map :message failures))
+        by-msg (group-by :message failures)]
+    (mapv (fn [m]
+            (let [fs (get by-msg m)]
+              {:message m
+               :count (count fs)
+               :example (:answers (first fs))}))
+          order)))
+
+(defn check-template
+  "Render `config`'s template at repo-dir for every combination. Returns
+   {:combinations [answers ...]
+    :errors [{:message s :count n :example answers} ...]
+    :never-generated [src ...]}
+   :never-generated lists template source files no combination produces; it is
+   only computed when there are no errors, since a failed combination's
+   surviving files are unknown."
+  [repo-dir config]
+  (let [combos (combinations config)
+        results (mapv (fn [answers] (assoc (check-one repo-dir config answers)
+                                           :answers answers))
+                      combos)
+        failures (keep (fn [r] (when (:error r) {:message (:error r)
+                                                 :answers (:answers r)}))
+                       results)
+        errors (group-errors failures)
+        generated (set (mapcat :srcs results))]
+    {:combinations combos
+     :errors errors
+     :never-generated (if (seq errors)
+                        []
+                        (vec (remove generated (generate/source-files repo-dir config))))}))

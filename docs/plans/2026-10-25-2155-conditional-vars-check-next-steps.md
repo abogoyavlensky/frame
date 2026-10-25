@@ -260,7 +260,7 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 - Create: `src/frame/check.lg`
 - Test: `test/frame/check_test.lg`
 
-- [ ] **Step 1: Write failing tests** (tmp templates written the same way as in `generate_test.lg`):
+- [x] **Step 1: Write failing tests** (tmp templates written the same way as in `generate_test.lg`):
   - `combinations` for `db` (2 options) × `auth` boolean → 4 maps in order `sqlite/true, sqlite/false, postgres/true, postgres/false`.
   - With `frontend` (`htmx`, `react`, `none`), `auth` `:when "frontend == htmx"`, `daisyui` `:when "frontend != none"` → htmx: 2 (auth) × 2 (daisyui) = 4; react: 1 × 2 = 2; none: 1 × 1 = 1; total 7, with no duplicates. Adding the transitive `flavor`/`ssr` pair from Task 3 under a `re-frame` option does not add combinations for other frontends.
   - string var without default → `"example"`; with default `"ann"` → `"ann"`.
@@ -268,10 +268,10 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
   - a template where one file under `{% if auth %}…` contains `{{ missing }}` → one error group whose `:count` equals the number of auth-true combinations and whose message contains the file path and `unresolved variable`.
   - a template with a file `{% if db == mysql %}x.sql{% endif %}` (unreachable) → `:never-generated` contains that source path.
   - a broken `:next-steps` entry is reported as an error.
-- [ ] **Step 2: Run** `lgx test` — new tests fail.
-- [ ] **Step 3: Implement** `combinations` (DFS per the Design, carrying the skipped set and using `prompt/applies?` and `prompt/skipped-value`) and `check-template [repo-dir config]`: for each combination, `compute-vars` with `project-name` `"example-app"`, then `generate/render-entries` and `new/next-steps-lines` with a dummy target (`check` requires `frame.new`; `new` never requires `check`, so there is no cycle). Catch ex-info per combination; group by `ex-message`, keeping count and the first combination. When there are no errors, `:never-generated` = `generate/source-files` minus the union of every entry's `:src`.
-- [ ] **Step 4: Run** `lgx test` — PASS.
-- [ ] **Step 5: Commit** `git commit -m "feat: enumerate and render every valid answer combination"`
+- [x] **Step 2: Run** `lgx test` — new tests fail.
+- [x] **Step 3: Implement** `combinations` (DFS per the Design, carrying the skipped set and using `prompt/applies?` and `prompt/skipped-value`) and `check-template [repo-dir config]`: for each combination, `compute-vars` with `project-name` `"example-app"`, then `generate/render-entries` and `new/next-steps-lines` with a dummy target (`check` requires `frame.new`; `new` never requires `check`, so there is no cycle). Catch ex-info per combination; group by `ex-message`, keeping count and the first combination. When there are no errors, `:never-generated` = `generate/source-files` minus the union of every entry's `:src`.
+- [x] **Step 4: Run** `lgx test` — PASS.
+- [x] **Step 5: Commit** `git commit -m "feat: enumerate and render every valid answer combination"`
 
 ### Task 7: Check — output, JSON, and CLI wiring
 
