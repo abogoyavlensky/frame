@@ -302,14 +302,14 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Update `README.md`:**
+- [x] **Step 1: Update `README.md`:**
   - **Usage:** add `frame check <source> [--json]` with a one-paragraph description and an example GitHub Actions snippet that feeds `combinations` into a matrix and runs `frame new --defaults --var "${{ matrix.vars }}" <source> app`.
   - **frame.edn:** document `:when` (syntax, earlier-vars-only rule, skipped values, `--var` rejection, typo checks) and `:next-steps` (inline rendering, blank entries dropped, printed after `cd <target>`). Add both to the example config.
   - Note that templates using `:when`/`:next-steps` should set `:min-frame-version` to the first frame release that supports them, because older frame ignores `:when`.
   - **Shell completions:** mention the `check` subcommand and `--json`.
   - Keep the existing voice; use /writing-clearly.
-- [ ] **Step 2: Run** `lgx check` — PASS.
-- [ ] **Step 3: Commit** `git commit -m "docs: document :when, :next-steps, and frame check"`
+- [x] **Step 2: Run** `lgx check` — PASS.
+- [x] **Step 3: Commit** `git commit -m "docs: document :when, :next-steps, and frame check"`
 
 ### Task 9: Final verification
 
