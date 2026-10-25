@@ -165,6 +165,8 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 
 ### Task 1: Public condition evaluation
 
+> Deviation: `lgx.edn` pinned `:lg-version "1.11.1"` but the installed let-go is 1.13.0 (bumped by the user), so `lgx test` refused to run. Updated the pin to 1.13.0 (own commit before Task 1). The JSON string-key gotcha in the Design no longer reproduces on 1.13.0; `format-json` still builds keyword keys, which work on both.
+
 **Files:**
 - Modify: `src/frame/template/render.lg`
 - Test: `test/frame/template/render_test.lg`
@@ -200,6 +202,8 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 
 ### Task 3: Prompt — skip, reject, and pre-check
 
+> Deviation: `skipped-keys` evaluates each `:when` against the answers of earlier vars only (found by codex review): against the full map, a later var named like a bare literal (`htmx`) changed its meaning. Regression test added. The `does not apply` error also has a transitive wording ("depends on X, which was skipped").
+
 **Files:**
 - Modify: `src/frame/prompt.lg`
 - Test: `test/frame/prompt_test.lg`
@@ -230,6 +234,8 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 
 ### Task 4: Generate — pure `render-entries` and `source-files`
 
+> Deviation: path-segment errors are prefixed with `<rel-src>: ` and no line number (a segment is always "line 1"), so the test fixture is `{{ missing }}-x.txt` and the check is `starts-with "{{ missing }}-x.txt: "`. The rethrow lives in `with-src-context`, which takes a thunk and keeps the logic outside the `catch` (clj-kondo does not analyze catch bodies in let-go, so a private helper called only from there lints as unused).
+
 **Files:**
 - Modify: `src/frame/generate.lg`
 - Test: `test/frame/generate_test.lg`
@@ -241,6 +247,8 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 - [x] **Step 5: Commit** `git commit -m "refactor: split in-memory rendering from writing in generate"`
 
 ### Task 5: `frame new` — skipped summary and next steps
+
+> Deviation: a broken `:next-steps` entry throws `:next-steps entry N: <message>`, so `frame check` groups and reports it with its position.
 
 **Files:**
 - Modify: `src/frame/new.lg`
@@ -275,6 +283,8 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 
 ### Task 7: Check — output, JSON, and CLI wiring
 
+> Deviation: `format-human` takes `[src config result]` and `format-json` takes `[config result]` (they need the vars to list applied vars in declared order); added public `ok?`. `check.lg` requires `[json]` explicitly (as `config.lg` does for `[edn]`) to satisfy the linter. Wall time for `check ../clojure-stack-lite`: 1.7s. Codex finding about comma-containing values in `vars` backlogged: `docs/backlog/check-json-vars-comma-values.md`.
+
 **Files:**
 - Modify: `src/frame/check.lg`, `main.lg`
 - Test: `test/frame/check_test.lg`
@@ -299,6 +309,8 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 
 ### Task 8: Documentation
 
+> Deviation: the CI example passes the matrix value through an `env` variable instead of interpolating `${{ matrix.vars }}` into the shell command (codex finding: template values are data and would otherwise be shell-interpreted). The README also notes that values with commas cannot be replayed through `--var`.
+
 **Files:**
 - Modify: `README.md`
 
@@ -313,6 +325,33 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 
 ### Task 9: Final verification
 
-- [ ] **Step 1:** `lgx check` — fmt, lint, and all tests pass.
-- [ ] **Step 2:** `lgx build` and run `bin/frame check ../clojure-stack-lite` and `bin/frame new --defaults --var developer=x ../clojure-stack-lite app --dir <scratch>/app` — both succeed; the summary and next steps print as before (clojure-stack-lite has no `:next-steps` yet).
-- [ ] **Step 3:** Mark this plan's checkboxes complete and commit `git commit -m "docs: mark conditional vars/check/next-steps plan complete"`.
+- [x] **Step 1:** `lgx check` — fmt, lint, and all tests pass.
+- [x] **Step 2:** `lgx build` and run `bin/frame check ../clojure-stack-lite` and `bin/frame new --defaults --var developer=x ../clojure-stack-lite app --dir <scratch>/app` — both succeed; the summary and next steps print as before (clojure-stack-lite has no `:next-steps` yet).
+- [x] **Step 3:** Mark this plan's checkboxes complete and commit `git commit -m "docs: mark conditional vars/check/next-steps plan complete"`.
+
+---
+
+## Completion summary
+
+**Status: completed** (2026-10-25, branch `conditional-vars`).
+
+Implemented all three features:
+
+- `:when` on vars: config validation with typo checks, skip logic with transitive skips, `--var` rejection with a pre-check before the first prompt, `(skipped)` in the summary.
+- `frame check <source> [--json]`: enumerates every valid combination, renders each in memory, groups errors, reports never-generated files, human and JSON output, exit 1 on failure.
+- `:next-steps`: validated, rendered before writing, printed under `Next steps:`.
+
+Verified with `lgx check` (213 tests, 0 failures, lint and fmt clean), the built `bin/frame check ../clojure-stack-lite` (16 combinations, OK, ~1.7s), `bin/frame new --defaults` on the same template, and the interactive path driven in a real tty (choosing `react` skips the auth question). Failure paths (unresolved variable, never-generated file, exit codes) were exercised on a scratch template.
+
+**Deviations (all in one place):**
+
+1. `lgx.edn` `:lg-version` pin bumped 1.11.1 to 1.13.0 to match the installed let-go; the JSON string-key gotcha is gone on 1.13.0 (keyword keys kept anyway).
+2. `skipped-keys` evaluates against earlier answers only (codex finding, regression test added).
+3. Path-segment errors carry no line number; the rethrow helper takes a thunk because kondo does not analyze catch bodies.
+4. `:next-steps` errors are prefixed `:next-steps entry N:`.
+5. `format-human`/`format-json` take the config as well; `ok?` is public; `[json]` is required explicitly.
+6. README CI example passes matrix vars through `env` (codex finding).
+7. Stayed on the existing `conditional-vars` branch instead of creating another; the session task list tools were not available, so the checkboxes in this document were the only tracking surface.
+8. Bootstrapped `docs/backlog/` and `AGENTS.md` for one entry: `check-json-vars-comma-values` (values containing a comma cannot be replayed through `--var`; the `--var` syntax predates this work).
+
+**What the plan could have specified better:** it assumed the toolchain pin matched the installed let-go, and it left the signatures of the output functions and the `--var` comma limitation (which `check --json` makes visible) unmentioned.
