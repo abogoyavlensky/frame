@@ -1,5 +1,6 @@
 (ns frame.template.render-test
   (:require [clojure.test :refer [deftest is]]
+            [frame.template.parser :as parser]
             [frame.template.render :as r]))
 
 (defn- render-error [f]
@@ -159,3 +160,27 @@
          (r/render-segment "{% if db == sqlite %}migrations{% endif %}" {"db" "sqlite"})))
   (is (= ""
          (r/render-segment "{% if db == sqlite %}migrations{% endif %}" {"db" "postgres"}))))
+
+;; ---------------------------------------------------------------------------
+;; Public condition evaluation (used by :when in frame.edn)
+;; ---------------------------------------------------------------------------
+
+(defn- cond? [s vars]
+  (r/eval-condition (parser/parse-cond s) vars))
+
+(deftest eval-condition-equality
+  (is (true? (cond? "frontend == htmx" {"frontend" "htmx"})))
+  (is (false? (cond? "frontend == htmx" {"frontend" "react"}))))
+
+(deftest eval-condition-not-on-falsy-values
+  (is (true? (cond? "not auth" {"auth" false})))
+  (is (true? (cond? "not auth" {"auth" ""})))
+  (is (false? (cond? "not auth" {"auth" true}))))
+
+(deftest eval-condition-combined
+  (is (true? (cond? "frontend != none and daisyui" {"frontend" "react"
+                                                    "daisyui" true})))
+  (is (false? (cond? "frontend != none and daisyui" {"frontend" "none"
+                                                     "daisyui" true})))
+  (is (false? (cond? "frontend != none and daisyui" {"frontend" "react"
+                                                     "daisyui" false}))))
