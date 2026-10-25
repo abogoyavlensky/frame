@@ -234,11 +234,11 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 - Modify: `src/frame/generate.lg`
 - Test: `test/frame/generate_test.lg`
 
-- [ ] **Step 1: Write failing tests:** `render-entries` on the demo fixture returns entries whose `:dst` set matches the `demo-expected` tree and writes nothing; a template file named `{{ missing }}/x.txt` throws with a message that starts with `{{ missing }}/x.txt: ` and contains `unresolved variable`; it throws `:collision` for the collision template used in `destination-collision-aborts-before-writing`. `source-files` on the demo fixture returns the sorted root-relative paths (e.g. includes `"{% if auth %}auth{% endif %}/handlers.clj"`).
-- [ ] **Step 2: Run** `lgx test` — new tests fail.
-- [ ] **Step 3: Implement:** `render-entries` = `build-entries` + `check-collisions!`, returning the entries; `generate!` calls it and then writes. `source-files` maps `relative-to root` over `walk-files`. Also wrap the `render-path` call in `build-entries` with the same catch/rethrow that content errors get (`generate.lg:91-100`), prefixing `<rel-src>: `, so path-segment errors (e.g. `{{ projectname }}` in a directory name) name their source file — `frame check` groups errors by message and needs the location in it.
-- [ ] **Step 4: Run** `lgx test` — PASS (all existing generate tests unchanged).
-- [ ] **Step 5: Commit** `git commit -m "refactor: split in-memory rendering from writing in generate"`
+- [x] **Step 1: Write failing tests:** `render-entries` on the demo fixture returns entries whose `:dst` set matches the `demo-expected` tree and writes nothing; a template file named `{{ missing }}/x.txt` throws with a message that starts with `{{ missing }}/x.txt: ` and contains `unresolved variable`; it throws `:collision` for the collision template used in `destination-collision-aborts-before-writing`. `source-files` on the demo fixture returns the sorted root-relative paths (e.g. includes `"{% if auth %}auth{% endif %}/handlers.clj"`).
+- [x] **Step 2: Run** `lgx test` — new tests fail.
+- [x] **Step 3: Implement:** `render-entries` = `build-entries` + `check-collisions!`, returning the entries; `generate!` calls it and then writes. `source-files` maps `relative-to root` over `walk-files`. Also wrap the `render-path` call in `build-entries` with the same catch/rethrow that content errors get (`generate.lg:91-100`), prefixing `<rel-src>: `, so path-segment errors (e.g. `{{ projectname }}` in a directory name) name their source file — `frame check` groups errors by message and needs the location in it.
+- [x] **Step 4: Run** `lgx test` — PASS (all existing generate tests unchanged).
+- [x] **Step 5: Commit** `git commit -m "refactor: split in-memory rendering from writing in generate"`
 
 ### Task 5: `frame new` — skipped summary and next steps
 
