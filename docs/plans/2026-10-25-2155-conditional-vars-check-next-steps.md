@@ -279,11 +279,11 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 - Modify: `src/frame/check.lg`, `main.lg`
 - Test: `test/frame/check_test.lg`
 
-- [ ] **Step 1: Write failing tests:**
+- [x] **Step 1: Write failing tests:**
   - `format-human` for an OK result → `"Checked 4 combinations of <src>: OK"`; for a failing result → contains the error message, `in N of M combinations, e.g. key=value …`, and `never generated in any combination: <path>`.
   - `format-json` → parse it back with `json/read-json` (`{:keywords? true}`) and assert `:ok`, `:count`, a combination's `:answers` (skipped var present with its skipped value) and `:vars` (skipped var absent, declared order, e.g. `"frontend=react,daisyui=true"`), and `:never_generated`. Assert the raw string contains no `\"\"` key quoting.
-- [ ] **Step 2: Run** `lgx test` — new tests fail.
-- [ ] **Step 3: Implement** `format-human`, `format-json` (build the value with **keyword** keys — see the let-go gotcha in the Design), and `cmd-check! [ctx]`: resolve source, read config, print warnings to stderr like `new`, run `check-template`, print human or JSON to stdout, `(os/exit 1)` when not OK. Wrap in the same `try`/`frame: <message>` handler as `cmd-new!`. Register in `main.lg`:
+- [x] **Step 2: Run** `lgx test` — new tests fail.
+- [x] **Step 3: Implement** `format-human`, `format-json` (build the value with **keyword** keys — see the let-go gotcha in the Design), and `cmd-check! [ctx]`: resolve source, read config, print warnings to stderr like `new`, run `check-template`, print human or JSON to stdout, `(os/exit 1)` when not OK. Wrap in the same `try`/`frame: <message>` handler as `cmd-new!`. Register in `main.lg`:
   ```clojure
   {:name "check"
    :doc "Render every valid combination of answers in memory and report errors."
@@ -291,11 +291,11 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
    :opts [{:key :json? :long "json" :doc "Print the result as JSON (for CI matrices)."}]
    :run check/cmd-check!}
   ```
-- [ ] **Step 4: Run** `lgx test` — PASS. Then:
+- [x] **Step 4: Run** `lgx test` — PASS. Then:
   - `lgx run -- check test/frame/fixtures/demo-template` → `Checked 4 combinations of …: OK`, exit 0.
   - `lgx run -- check ../clojure-stack-lite` (branch `migrate-to-frame`) → OK with 16 combinations (db 2 × auth 2 × daisyui 2 × deploy 2). Note the wall time; if it is over ~15s, record it in the plan's notes (parse caching is a possible follow-up, out of scope here).
   - `lgx run -- check ../clojure-stack-lite --json | head -c 400` → valid JSON with `"ok":true`.
-- [ ] **Step 5: Commit** `git commit -m "feat: add frame check command with --json output"`
+- [x] **Step 5: Commit** `git commit -m "feat: add frame check command with --json output"`
 
 ### Task 8: Documentation
 

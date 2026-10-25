@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is]]
             [frame.check :as check]
             [frame.config :as config]
+            [json]
             [string :as str]))
 
 (def ^:private demo-template "test/frame/fixtures/demo-template")
@@ -159,3 +160,90 @@
     (is (= 1 (count (:errors r))))
     (is (= 2 (:count (first (:errors r)))))
     (is (str/includes? (:message (first (:errors r))) "unresolved variable"))))
+
+;; ---------------------------------------------------------------------------
+;; Output formats
+;; ---------------------------------------------------------------------------
+
+(def ^:private out-cfg
+  (cfg-of [{:key :frontend
+            :prompt "Frontend"
+            :type :enum
+            :options ["htmx" "react"]
+            :default "htmx"}
+           {:key :auth
+            :prompt "Auth?"
+            :type :boolean
+            :default false
+            :when "frontend == htmx"}
+           {:key :daisyui
+            :prompt "DaisyUI?"
+            :type :boolean
+            :default false}]))
+
+(def ^:private react-answers
+  {"frontend" "react"
+   "auth" false
+   "daisyui" true})
+
+(def ^:private ok-result
+  {:combinations [react-answers
+                  {"frontend" "htmx"
+                   "auth" true
+                   "daisyui" false}]
+   :errors []
+   :never-generated []})
+
+(def ^:private bad-result
+  {:combinations [react-answers
+                  {"frontend" "htmx"
+                   "auth" true
+                   "daisyui" false}]
+   :errors [{:message "a.txt:3: unresolved variable: fronted"
+             :count 1
+             :example {"frontend" "htmx"
+                       "auth" true
+                       "daisyui" false}}]
+   :never-generated ["x.sql"]})
+
+(deftest format-human-ok
+  (is (= "Checked 2 combinations of ../tpl: OK"
+         (check/format-human "../tpl" out-cfg ok-result))))
+
+(deftest format-human-failure-lists-errors-and-unreachable-files
+  (let [out (check/format-human "../tpl" out-cfg bad-result)]
+    (is (str/includes? out "a.txt:3: unresolved variable: fronted"))
+    (is (str/includes? out "  in 1 of 2 combinations, e.g. frontend=htmx auth=true daisyui=false"))
+    (is (str/includes? out "never generated in any combination: x.sql"))
+    (is (not (str/includes? out ": OK")))))
+
+(deftest ok-result-predicate
+  (is (check/ok? ok-result))
+  (is (not (check/ok? bad-result)))
+  (is (not (check/ok? (assoc ok-result :never-generated ["x"])))))
+
+(deftest format-json-round-trips
+  (let [raw (check/format-json out-cfg ok-result)
+        j (json/read-json raw {:keywords? true})
+        c (first (:combinations j))]
+    (is (= true (:ok j)))
+    (is (= 2 (:count j)))
+    (is (= [] (:never_generated j)))
+    ;; answers include the skipped var with its skipped value
+    (is (= {:frontend "react"
+            :auth false
+            :daisyui true}
+           (:answers c)))
+    ;; vars lists applied vars only, in declared order
+    (is (= "frontend=react,daisyui=true" (:vars c)))
+    (is (= "frontend=htmx,auth=true,daisyui=false" (:vars (second (:combinations j)))))
+    (is (not (str/includes? raw "\\\"")))))
+
+(deftest format-json-failure
+  (let [j (json/read-json (check/format-json out-cfg bad-result) {:keywords? true})]
+    (is (= false (:ok j)))
+    (is (= ["x.sql"] (:never_generated j)))
+    (is (= [{:message "a.txt:3: unresolved variable: fronted"
+             :count 1
+             :example "frontend=htmx,auth=true,daisyui=false"}]
+           (:errors j)))))

@@ -1,7 +1,10 @@
 (ns frame.check
-  (:require [frame.generate :as generate]
+  (:require [frame.config :as config]
+            [frame.generate :as generate]
             [frame.new :as new]
             [frame.prompt :as prompt]
+            [frame.source :as source]
+            [json]
             [string :as str]))
 
 ;; ---------------------------------------------------------------------------
@@ -94,3 +97,85 @@
      :never-generated (if (seq errors)
                         []
                         (vec (remove generated (generate/source-files repo-dir config))))}))
+
+;; ---------------------------------------------------------------------------
+;; Output
+;; ---------------------------------------------------------------------------
+
+(defn ok?
+  "True when the check found no errors and no never-generated files."
+  [result]
+  (and (empty? (:errors result))
+       (empty? (:never-generated result))))
+
+(defn- applied-pairs
+  "[\"key=value\" ...] for the vars that applied under `answers`, in declared
+   order. Skipped vars are left out: `frame new` rejects a --var for them."
+  [config answers]
+  (let [skipped (prompt/skipped-keys (:vars config) answers)]
+    (vec (keep (fn [v]
+                 (let [skey (name (:key v))]
+                   (when-not (contains? skipped skey)
+                     (str skey "=" (get answers skey)))))
+               (:vars config)))))
+
+(defn format-human
+  "Human-readable report for stdout."
+  [src config result]
+  (let [total (count (:combinations result))]
+    (if (ok? result)
+      (str "Checked " total " combinations of " src ": OK")
+      (str/join
+        "\n"
+        (concat
+          (mapcat (fn [e]
+                    [(:message e)
+                     (str "  in " (:count e) " of " total " combinations, e.g. "
+                          (str/join " " (applied-pairs config (:example e))))])
+                  (:errors result))
+          (map (fn [f] (str "never generated in any combination: " f))
+               (:never-generated result)))))))
+
+(defn format-json
+  "JSON report for stdout. Maps are built with keyword keys. `vars` is ready
+   to pass to `frame new --defaults --var`."
+  [config result]
+  (json/write-json
+    {:ok (ok? result)
+     :count (count (:combinations result))
+     :combinations (mapv (fn [answers]
+                           {:answers (into {} (map (fn [[k v]] [(keyword k) v]) answers))
+                            :vars (str/join "," (applied-pairs config answers))})
+                         (:combinations result))
+     :errors (mapv (fn [e]
+                     {:message (:message e)
+                      :count (:count e)
+                      :example (str/join "," (applied-pairs config (:example e)))})
+                   (:errors result))
+     :never_generated (:never-generated result)}))
+
+;; ---------------------------------------------------------------------------
+;; Command
+;; ---------------------------------------------------------------------------
+
+(defn- run* [ctx]
+  (let [src (get-in ctx [:args :source])
+        template-dir (source/resolve-source! src)
+        cfg (config/read-config template-dir)]
+    (doseq [w (:warnings cfg)]
+      (write! *err* (str "frame: warning: " w "\n")))
+    (let [result (check-template template-dir cfg)]
+      (println (if (get-in ctx [:opts :json?])
+                 (format-json cfg result)
+                 (format-human src cfg result)))
+      (when-not (ok? result)
+        (os/exit 1)))))
+
+(defn cmd-check!
+  "tiny-cli handler for `frame check`. Config and source errors are reported
+   as `frame: <message>` on stderr (exit 1), like `frame new`."
+  [ctx]
+  (try (run* ctx)
+       (catch e
+              (write! *err* (str "frame: " (ex-message e) "\n"))
+         (os/exit 1))))
