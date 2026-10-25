@@ -1,6 +1,8 @@
 (ns frame.new-test
   (:require [clojure.test :refer [deftest is]]
-            [frame.new :as new]))
+            [frame.config :as config]
+            [frame.new :as new]
+            [string :as str]))
 
 ;; ---------------------------------------------------------------------------
 ;; var-summary-lines: declared vars + final answers -> printable lines
@@ -52,6 +54,69 @@
   (is (= ["Variables:"
           "  author: "]
          (new/var-summary-lines [(nth demo-vars 2)] {"author" ""}))))
+
+;; ---------------------------------------------------------------------------
+;; Skipped vars in the summary
+;; ---------------------------------------------------------------------------
+
+(def ^:private gated-vars
+  (config/normalize-vars
+    [{:key :frontend
+      :prompt "Frontend"
+      :type :enum
+      :options ["htmx" "react"]
+      :default "htmx"}
+     {:key :auth
+      :prompt "Include auth?"
+      :type :boolean
+      :default false
+      :when "frontend == htmx"}]))
+
+(deftest summary-marks-skipped-vars
+  (is (= ["Variables:"
+          "  frontend: react"
+          "  auth: false (skipped)"]
+         (new/var-summary-lines gated-vars {"frontend" "react"
+                                            "auth" false}))))
+
+(deftest summary-does-not-mark-applicable-vars
+  (is (= ["Variables:"
+          "  frontend: htmx"
+          "  auth: false"]
+         (new/var-summary-lines gated-vars {"frontend" "htmx"
+                                            "auth" false}))))
+
+;; ---------------------------------------------------------------------------
+;; next-steps-lines: :next-steps templates rendered against the final vars
+;; ---------------------------------------------------------------------------
+
+(def ^:private steps-cfg
+  {:next-steps ["mise install"
+                "{% if db == postgres %}docker compose up -d{% endif %}"
+                "cd {{ project-name }}-x"]})
+
+(deftest next-steps-render-against-vars
+  (is (= ["cd /t" "mise install" "cd app-x"]
+         (new/next-steps-lines steps-cfg {"db" "sqlite"
+                                          "project-name" "app"} "/t")))
+  (is (= ["cd /t" "mise install" "docker compose up -d" "cd app-x"]
+         (new/next-steps-lines steps-cfg {"db" "postgres"
+                                          "project-name" "app"} "/t"))))
+
+(deftest next-steps-drop-blank-renders
+  (is (= ["cd /t" "go"]
+         (new/next-steps-lines {:next-steps ["  " "{% if x %}never{% endif %}" "go"]}
+                               {"x" false} "/t"))))
+
+(deftest next-steps-default-is-just-cd
+  (is (= ["cd /t"] (new/next-steps-lines {:next-steps []} {} "/t"))))
+
+(deftest next-steps-unresolved-var-throws
+  (let [msg (try (new/next-steps-lines {:next-steps ["{{ nope }}"]} {} "/t")
+                 nil
+                 (catch e (ex-message e)))]
+    (is (some? msg))
+    (is (str/includes? msg "unresolved variable"))))
 
 ;; ---------------------------------------------------------------------------
 ;; target-error: pure gate for whether a target dir may be generated into

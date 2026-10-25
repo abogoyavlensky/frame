@@ -246,13 +246,13 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 - Modify: `src/frame/new.lg`
 - Test: `test/frame/new_test.lg`
 
-- [ ] **Step 1: Write failing tests:**
+- [x] **Step 1: Write failing tests:**
   - `var-summary-lines` with a normalized auth var gated on `frontend == htmx` and answers `{"frontend" "react" "auth" false}` → contains `"  auth: false (skipped)"`; with `htmx` → `"  auth: false"`.
   - `next-steps-lines` with `:next-steps ["mise install" "{% if db == postgres %}docker compose up -d{% endif %}" "cd {{ project-name }}-x"]` → `["cd /t" "mise install" "cd app-x"]` for sqlite and includes the docker line for postgres; an entry that renders to whitespace only is dropped; a step with an unresolved var throws.
-- [ ] **Step 2: Run** `lgx test` — new tests fail.
-- [ ] **Step 3: Implement:** `var-summary-lines` appends ` (skipped)` when the var's name is in `(prompt/skipped-keys vars answers)`. Add `next-steps-lines [config vars target]` (render each with `render/render-segment`, trim, drop blank, prefix `cd <target>`). In `run*`, compute the lines right after `compute-vars` and **before** `generate!`; pass them to `print-summary`, which prints each under `Next steps:` indented two spaces.
-- [ ] **Step 4: Run** `lgx test` — PASS. Also `lgx run -- new --defaults test/frame/fixtures/demo-template demo --dir /tmp/frame-demo-$$` and confirm the output is unchanged apart from nothing new (the fixture has no `:next-steps`). Remove the dir afterwards.
-- [ ] **Step 5: Commit** `git commit -m "feat: template-defined next steps and skipped vars in summary"`
+- [x] **Step 2: Run** `lgx test` — new tests fail.
+- [x] **Step 3: Implement:** `var-summary-lines` appends ` (skipped)` when the var's name is in `(prompt/skipped-keys vars answers)`. Add `next-steps-lines [config vars target]` (render each with `render/render-segment`, trim, drop blank, prefix `cd <target>`). In `run*`, compute the lines right after `compute-vars` and **before** `generate!`; pass them to `print-summary`, which prints each under `Next steps:` indented two spaces.
+- [x] **Step 4: Run** `lgx test` — PASS. Also `lgx run -- new --defaults test/frame/fixtures/demo-template demo --dir /tmp/frame-demo-$$` and confirm the output is unchanged apart from nothing new (the fixture has no `:next-steps`). Remove the dir afterwards.
+- [x] **Step 5: Commit** `git commit -m "feat: template-defined next steps and skipped vars in summary"`
 
 ### Task 6: Check — enumeration and template check
 
