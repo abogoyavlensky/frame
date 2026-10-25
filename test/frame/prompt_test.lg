@@ -166,6 +166,28 @@
                                                "auth" true
                                                "author" ""}))))
 
+(deftest skipped-keys-ignores-later-vars-shadowing-a-literal
+  ;; `htmx` in the :when is a bare literal; the boolean var declared after it
+  ;; must not change what it means.
+  (let [vars (config/normalize-vars
+               [{:key :frontend
+                 :prompt "Frontend"
+                 :type :enum
+                 :options ["htmx" "react"]
+                 :default "htmx"}
+                {:key :auth
+                 :prompt "Auth?"
+                 :type :boolean
+                 :default false
+                 :when "frontend == htmx"}
+                {:key :htmx
+                 :prompt "htmx?"
+                 :type :boolean
+                 :default false}])]
+    (is (= #{} (prompt/skipped-keys vars {"frontend" "htmx"
+                                          "auth" false
+                                          "htmx" false})))))
+
 (deftest transitive-skip-ignores-not-equal-on-skipped-value
   ;; flavor is skipped (""), so `flavor != uix` would be true on its own;
   ;; ssr must still be skipped because it asks about a skipped answer.

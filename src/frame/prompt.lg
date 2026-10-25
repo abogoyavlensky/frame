@@ -109,14 +109,16 @@
 
 (defn skipped-keys
   "Set of names of vars skipped under the final `answers`, recomputed in
-   declared order."
+   declared order. Each :when sees only the answers of earlier vars, as during
+   collection, so a bare literal is never shadowed by a later var's name."
   [vars answers]
-  (reduce (fn [skipped var]
-            (if (applies? var answers skipped)
-              skipped
-              (conj skipped (name (:key var)))))
-          #{}
-          vars))
+  (first
+    (reduce (fn [[skipped prefix] var]
+              (let [skey (name (:key var))]
+                [(if (applies? var prefix skipped) skipped (conj skipped skey))
+                 (assoc prefix skey (get answers skey))]))
+            [#{} {}]
+            vars)))
 
 (defn- skip-error [var skipped]
   (let [skey (name (:key var))
