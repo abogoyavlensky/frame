@@ -3,6 +3,7 @@
             [frame.generate :as generate]
             [frame.prompt :as prompt]
             [frame.source :as source]
+            [frame.template.render :as render]
             [string :as str]))
 
 ;; ---------------------------------------------------------------------------
@@ -86,18 +87,39 @@
 (defn var-summary-lines
   "Lines listing each declared var with its final answer, in config order:
    [\"Variables:\" \"  <key>: <value>\" ...], or [] when there are no vars.
-   Built-ins and computed values in `answers` are not \"picked\", so they are
-   left out."
+   A var skipped by its :when is marked \" (skipped)\". Built-ins and computed
+   values in `answers` are not \"picked\", so they are left out."
   [vars answers]
   (if (empty? vars)
     []
-    (vec (cons "Variables:"
-               (map (fn [v]
-                      (let [skey (name (:key v))]
-                        (str "  " skey ": " (get answers skey))))
-                    vars)))))
+    (let [skipped (prompt/skipped-keys vars answers)]
+      (vec (cons "Variables:"
+                 (map (fn [v]
+                        (let [skey (name (:key v))]
+                          (str "  " skey ": " (get answers skey)
+                               (when (contains? skipped skey) " (skipped)"))))
+                      vars))))))
 
-(defn- print-summary [n project-name target cfg answers]
+(defn- render-step [i step vars]
+  (let [res (try {:ok (render/render-segment step vars)}
+                 (catch e {:err e}))]
+    (if-let [e (:err res)]
+      (throw (ex-info (str ":next-steps entry " (inc i) ": " (ex-message e))
+                      (assoc (or (ex-data e) {})
+                             :reason (or (:reason (ex-data e)) :render))))
+      (str/trim (:ok res)))))
+
+(defn next-steps-lines
+  "Lines printed under \"Next steps:\": `cd <target>` followed by each
+   :next-steps entry rendered against `vars` in inline mode. Entries that
+   render blank are dropped. Throws on a render error."
+  [config vars target]
+  (vec (cons (str "cd " target)
+             (remove str/blank?
+                     (map-indexed (fn [i step] (render-step i step vars))
+                                  (:next-steps config))))))
+
+(defn- print-summary [n project-name target cfg answers steps]
   (println (str "Created " project-name " (" n
                 (if (= n 1) " file" " files") ") at " target))
   (let [lines (var-summary-lines (:vars cfg) answers)]
@@ -107,7 +129,8 @@
         (println line))))
   (println)
   (println "Next steps:")
-  (println (str "  cd " target)))
+  (doseq [line steps]
+    (println (str "  " line))))
 
 (defn- run* [ctx]
   (let [source-arg (get-in ctx [:args :source])
@@ -134,7 +157,9 @@
                           (prompt/ask! cfg cli-vars {}))]
             (if (nil? answers)
               (os/exit 1) ;; cancelled at a var prompt
-              (let [final (prompt/compute-vars cfg (assoc answers "project-name" project-name))]
+              (let [final (prompt/compute-vars cfg (assoc answers "project-name" project-name))
+                    ;; Rendered before anything is written: a broken step aborts clean.
+                    steps (next-steps-lines cfg final target)]
                 ;; Re-check right before writing. The prompts above can block for
                 ;; input, during which a concurrent process could swap a file for a
                 ;; symlink/FIFO (TOCTOU). Re-running shrinks that window to the tiny
@@ -142,7 +167,7 @@
                 ;; to close it entirely.
                 (validate-target! target force?)
                 (let [n (generate/generate! template-dir target final cfg)]
-                  (print-summary n project-name target cfg final))))))))))
+                  (print-summary n project-name target cfg final steps))))))))))
 
 (defn cmd-new!
   "tiny-cli handler for `frame new`. Catches all errors and reports them

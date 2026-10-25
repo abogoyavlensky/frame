@@ -1,0 +1,249 @@
+(ns frame.check-test
+  (:require [clojure.test :refer [deftest is]]
+            [frame.check :as check]
+            [frame.config :as config]
+            [json]
+            [string :as str]))
+
+(def ^:private demo-template "test/frame/fixtures/demo-template")
+
+(defn- tmp-dir []
+  (str (os/temp-dir) "/frame-check-test-" (rand-int 100000000)))
+
+(defn- mk-template
+  "Write frame.edn (from the map `cfg`) and template files ({rel-path content})
+   into a throwaway dir. Returns the dir."
+  [cfg files]
+  (let [dir (tmp-dir)]
+    (mkdir (str dir "/template"))
+    (spit (str dir "/frame.edn") (pr-str cfg))
+    (doseq [[rel content] files]
+      (spit (str dir "/template/" rel) content))
+    dir))
+
+(def ^:private db-var
+  {:key :db
+   :prompt "Database"
+   :type :enum
+   :options ["sqlite" "postgres"]
+   :default "sqlite"})
+
+(def ^:private auth-var
+  {:key :auth
+   :prompt "Auth?"
+   :type :boolean
+   :default false})
+
+(defn- cfg-of [vars]
+  {:vars (config/normalize-vars vars)})
+
+;; ---------------------------------------------------------------------------
+;; combinations
+;; ---------------------------------------------------------------------------
+
+(deftest combinations-enum-times-boolean-in-declared-order
+  (is (= [{"db" "sqlite"
+           "auth" true}
+          {"db" "sqlite"
+           "auth" false}
+          {"db" "postgres"
+           "auth" true}
+          {"db" "postgres"
+           "auth" false}]
+         (check/combinations (cfg-of [db-var auth-var])))))
+
+(def ^:private frontend-vars
+  [{:key :frontend
+    :prompt "Frontend"
+    :type :enum
+    :options ["htmx" "react" "none" "re-frame"]
+    :default "htmx"}
+   {:key :auth
+    :prompt "Auth?"
+    :type :boolean
+    :default false
+    :when "frontend == htmx"}
+   {:key :flavor
+    :prompt "Flavor"
+    :type :enum
+    :options ["reagent" "uix"]
+    :default "reagent"
+    :when "frontend == re-frame"}
+   {:key :ssr
+    :prompt "SSR?"
+    :type :boolean
+    :default false
+    :when "flavor != uix"}
+   {:key :daisyui
+    :prompt "DaisyUI?"
+    :type :boolean
+    :default false
+    :when "frontend != none"}])
+
+(deftest combinations-skip-inapplicable-vars-without-duplicates
+  (let [combos (check/combinations (cfg-of frontend-vars))
+        by-fe (group-by (fn [c] (get c "frontend")) combos)]
+    ;; htmx: auth 2 x daisyui 2; react: 1 x 2; none: 1 x 1
+    (is (= 4 (count (get by-fe "htmx"))))
+    (is (= 2 (count (get by-fe "react"))))
+    (is (= 1 (count (get by-fe "none"))))
+    ;; re-frame: flavor reagent -> ssr 2, uix -> ssr skipped 1; x daisyui 2
+    (is (= 6 (count (get by-fe "re-frame"))))
+    (is (= 13 (count combos)))
+    (is (= (count combos) (count (set combos))))))
+
+(deftest combinations-skipped-vars-carry-skipped-values
+  (let [c (first (filter (fn [c] (= "none" (get c "frontend")))
+                         (check/combinations (cfg-of frontend-vars))))]
+    (is (= false (get c "auth")))
+    (is (= "" (get c "flavor")))
+    (is (= false (get c "ssr")))
+    (is (= false (get c "daisyui")))))
+
+(deftest combinations-string-var-uses-default-or-example
+  (is (= [{"who" "example"}]
+         (check/combinations (cfg-of [{:key :who
+                                       :prompt "Who"
+                                       :type :string}]))))
+  (is (= [{"who" "example"}]
+         (check/combinations (cfg-of [{:key :who
+                                       :prompt "Who"
+                                       :type :string
+                                       :default ""}]))))
+  (is (= [{"who" "ann"}]
+         (check/combinations (cfg-of [{:key :who
+                                       :prompt "Who"
+                                       :type :string
+                                       :default "ann"}])))))
+
+;; ---------------------------------------------------------------------------
+;; check-template
+;; ---------------------------------------------------------------------------
+
+(deftest check-template-demo-is-clean
+  (let [r (check/check-template demo-template (config/read-config demo-template))]
+    (is (= 4 (count (:combinations r))))
+    (is (= [] (:errors r)))
+    (is (= [] (:never-generated r)))))
+
+(deftest check-template-groups-errors-by-message
+  (let [dir (mk-template {:vars [db-var auth-var]}
+                         {"README.md" "ok"
+                          "{% if auth %}a.txt{% endif %}" "{{ missing }}"})
+        r (check/check-template dir (config/read-config dir))]
+    (os/sh "rm" "-rf" dir)
+    (is (= 4 (count (:combinations r))))
+    (is (= 1 (count (:errors r))))
+    (let [e (first (:errors r))]
+      (is (= 2 (:count e)))
+      (is (str/includes? (:message e) "{% if auth %}a.txt{% endif %}:1"))
+      (is (str/includes? (:message e) "unresolved variable"))
+      (is (= true (get (:example e) "auth"))))
+    ;; unknown while combinations are failing
+    (is (= [] (:never-generated r)))))
+
+(deftest check-template-reports-never-generated-files
+  (let [dir (mk-template {:vars [db-var]}
+                         {"README.md" "ok"
+                          "{% if db == mysql %}x.sql{% endif %}" "select 1"})
+        r (check/check-template dir (config/read-config dir))]
+    (os/sh "rm" "-rf" dir)
+    (is (= [] (:errors r)))
+    (is (= ["{% if db == mysql %}x.sql{% endif %}"] (:never-generated r)))))
+
+(deftest check-template-reports-broken-next-steps
+  (let [dir (mk-template {:vars [db-var]
+                          :next-steps ["go {{ nope }}"]}
+                         {"README.md" "ok"})
+        r (check/check-template dir (config/read-config dir))]
+    (os/sh "rm" "-rf" dir)
+    (is (= 1 (count (:errors r))))
+    (is (= 2 (:count (first (:errors r)))))
+    (is (str/includes? (:message (first (:errors r))) "unresolved variable"))))
+
+;; ---------------------------------------------------------------------------
+;; Output formats
+;; ---------------------------------------------------------------------------
+
+(def ^:private out-cfg
+  (cfg-of [{:key :frontend
+            :prompt "Frontend"
+            :type :enum
+            :options ["htmx" "react"]
+            :default "htmx"}
+           {:key :auth
+            :prompt "Auth?"
+            :type :boolean
+            :default false
+            :when "frontend == htmx"}
+           {:key :daisyui
+            :prompt "DaisyUI?"
+            :type :boolean
+            :default false}]))
+
+(def ^:private react-answers
+  {"frontend" "react"
+   "auth" false
+   "daisyui" true})
+
+(def ^:private ok-result
+  {:combinations [react-answers
+                  {"frontend" "htmx"
+                   "auth" true
+                   "daisyui" false}]
+   :errors []
+   :never-generated []})
+
+(def ^:private bad-result
+  {:combinations [react-answers
+                  {"frontend" "htmx"
+                   "auth" true
+                   "daisyui" false}]
+   :errors [{:message "a.txt:3: unresolved variable: fronted"
+             :count 1
+             :example {"frontend" "htmx"
+                       "auth" true
+                       "daisyui" false}}]
+   :never-generated ["x.sql"]})
+
+(deftest format-human-ok
+  (is (= "Checked 2 combinations of ../tpl: OK"
+         (check/format-human "../tpl" out-cfg ok-result))))
+
+(deftest format-human-failure-lists-errors-and-unreachable-files
+  (let [out (check/format-human "../tpl" out-cfg bad-result)]
+    (is (str/includes? out "a.txt:3: unresolved variable: fronted"))
+    (is (str/includes? out "  in 1 of 2 combinations, e.g. frontend=htmx auth=true daisyui=false"))
+    (is (str/includes? out "never generated in any combination: x.sql"))
+    (is (not (str/includes? out ": OK")))))
+
+(deftest ok-result-predicate
+  (is (check/ok? ok-result))
+  (is (not (check/ok? bad-result)))
+  (is (not (check/ok? (assoc ok-result :never-generated ["x"])))))
+
+(deftest format-json-round-trips
+  (let [raw (check/format-json out-cfg ok-result)
+        j (json/read-json raw {:keywords? true})
+        c (first (:combinations j))]
+    (is (= true (:ok j)))
+    (is (= 2 (:count j)))
+    (is (= [] (:never_generated j)))
+    ;; answers include the skipped var with its skipped value
+    (is (= {:frontend "react"
+            :auth false
+            :daisyui true}
+           (:answers c)))
+    ;; vars lists applied vars only, in declared order
+    (is (= "frontend=react,daisyui=true" (:vars c)))
+    (is (= "frontend=htmx,auth=true,daisyui=false" (:vars (second (:combinations j)))))
+    (is (not (str/includes? raw "\\\"")))))
+
+(deftest format-json-failure
+  (let [j (json/read-json (check/format-json out-cfg bad-result) {:keywords? true})]
+    (is (= false (:ok j)))
+    (is (= ["x.sql"] (:never_generated j)))
+    (is (= [{:message "a.txt:3: unresolved variable: fronted"
+             :count 1
+             :example "frontend=htmx,auth=true,daisyui=false"}]
+           (:errors j)))))

@@ -1,7 +1,7 @@
 # .mise.toml
 [tools]
-lg = "1.11.1"
-lgx = "0.1.1"
+lg = "1.13.0"
+lgx = "0.5.2"
 cljfmt = "0.16.4"
 clj-kondo = "2026.05.25"
 
@@ -11,7 +11,4 @@ lgx = "github:abogoyavlensky/lgx"
 cljfmt = "github:weavejester/cljfmt"
 
 [settings]
-# mise can't verify lg 1.11.0+ GitHub attestations: GitHub rotated its TSA cert
-# and mise's bundled trusted root predates it. Checksum + SLSA still run. 
-# Drop when a newer mise ships the new TSA.
 github_attestations = false

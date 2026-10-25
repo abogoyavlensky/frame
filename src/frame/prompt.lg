@@ -85,29 +85,107 @@
         (var-error (str "unknown --var key: " k) {:key k})))))
 
 ;; ---------------------------------------------------------------------------
+;; :when — skipped vars
+;;
+;; A var whose :when is false is skipped: not asked, not defaulted, and given
+;; its type's falsy skipped value. Skips are transitive: a var is skipped
+;; whenever any var in its :when-refs was skipped, without evaluating its
+;; condition (a `!=` against a skipped "" would otherwise be true).
+;; ---------------------------------------------------------------------------
+
+(defn skipped-value
+  "The value a skipped var takes: false for booleans, \"\" otherwise."
+  [var]
+  (if (= (:type var) :boolean) false ""))
+
+(defn applies?
+  "True when `var` should be asked. `skipped` is the set of var-name strings
+   skipped so far; `answers` the string-keyed answers collected so far."
+  [var answers skipped]
+  (cond
+    (some skipped (:when-refs var)) false
+    (nil? (:when-cond var)) true
+    :else (render/eval-condition (:when-cond var) answers)))
+
+(defn skipped-keys
+  "Set of names of vars skipped under the final `answers`, recomputed in
+   declared order. Each :when sees only the answers of earlier vars, as during
+   collection, so a bare literal is never shadowed by a later var's name."
+  [vars answers]
+  (first
+    (reduce (fn [[skipped prefix] var]
+              (let [skey (name (:key var))]
+                [(if (applies? var prefix skipped) skipped (conj skipped skey))
+                 (assoc prefix skey (get answers skey))]))
+            [#{} {}]
+            vars)))
+
+(defn- skip-error [var skipped]
+  (let [skey (name (:key var))
+        dep (first (filter skipped (:when-refs var)))]
+    (var-error (if dep
+                 (str "var " skey " does not apply: it depends on " dep ", which was skipped")
+                 (str "var " skey " does not apply: :when " (pr-str (:when var)) " is false"))
+               {:key (:key var)})))
+
+;; ---------------------------------------------------------------------------
 ;; Non-interactive resolution (--defaults)
 ;; ---------------------------------------------------------------------------
 
 (defn resolve-answers
   "Resolve answers without prompting: each var takes its --var override, else
-   its default (when opts :defaults?). Returns a string-keyed, coerced/validated
-   answers map. Unknown --var keys and invalid values throw ex-info
-   {:reason :var}."
+   its default (when opts :defaults?). A var whose :when is false takes its
+   skipped value, and a --var for it is an error. Returns a string-keyed,
+   coerced/validated answers map. Unknown --var keys and invalid values throw
+   ex-info {:reason :var}."
   [config cli-vars opts]
   (check-unknown-keys! config cli-vars)
-  (reduce
-    (fn [acc var]
-      (let [skey (name (:key var))]
-        (cond
-          (contains? cli-vars skey)
-          (assoc acc skey (coerce-answer var (get cli-vars skey)))
+  (first
+    (reduce
+      (fn [[acc skipped] var]
+        (let [skey (name (:key var))]
+          (cond
+            (not (applies? var acc skipped))
+            (if (contains? cli-vars skey)
+              (skip-error var skipped)
+              [(assoc acc skey (skipped-value var)) (conj skipped skey)])
 
-          (:defaults? opts)
-          (assoc acc skey (coerce-answer var (:default var)))
+            (contains? cli-vars skey)
+            [(assoc acc skey (coerce-answer var (get cli-vars skey))) skipped]
 
-          :else acc)))
-    {}
-    (:vars config)))
+            (:defaults? opts)
+            [(assoc acc skey (coerce-answer var (:default var))) skipped]
+
+            :else [acc skipped])))
+      [{} #{}]
+      (:vars config))))
+
+(defn precheck-cli
+  "Walk the vars in order over the --var answers alone. A var's :when is
+   evaluated once every var it references is in the partial map (skipped vars
+   are in it with their skipped value). A --var for a var found not to apply
+   throws {:reason :var}; otherwise the var takes its skipped value, or its
+   coerced --var value when given. Vars whose references are still unknown are
+   left to the prompt loop. Returns the partial string-keyed answers map."
+  [config cli-vars]
+  (check-unknown-keys! config cli-vars)
+  (first
+    (reduce
+      (fn [[m skipped] var]
+        (let [skey (name (:key var))
+              evaluable? (every? (fn [r] (contains? m r)) (:when-refs var))]
+          (cond
+            (and evaluable? (not (applies? var m skipped)))
+            (if (contains? cli-vars skey)
+              (skip-error var skipped)
+              [(assoc m skey (skipped-value var)) (conj skipped skey)])
+
+            (contains? cli-vars skey)
+            [(assoc m skey (coerce-answer var (get cli-vars skey))) skipped]
+
+            :else [m skipped])))
+      [{} #{}]
+      (:vars config))))
 
 ;; ---------------------------------------------------------------------------
 ;; Computed vars (single pass; rendered against the collected answers)
@@ -178,35 +256,36 @@
                             (when (nil? (re-matches project-name-pattern t))
                               "start with a letter; lowercase letters, digits, and hyphens only"))})))
 
-(defn- resolve-from-cli [config cli-vars]
-  (reduce
-    (fn [acc var]
-      (let [skey (name (:key var))]
-        (assoc acc skey (coerce-answer var (get cli-vars skey)))))
-    {}
-    (:vars config)))
-
 (defn ask!
   "Collect answers interactively inside one inline tui session. Vars already
-   answered by --var are coerced and skipped. When every var is pre-answered
-   (or there are none) no session is opened, so fully-specified runs work
-   headlessly. Returns the string-keyed answers map, or nil if the user cancels
-   a prompt."
+   answered by --var are coerced and skipped; vars whose :when is false are
+   skipped without a prompt. --var answers are pre-checked first so an
+   inapplicable one fails before the first prompt. When nothing is left to ask
+   no session is opened, so fully-specified runs work headlessly. Returns the
+   string-keyed answers map, or nil if the user cancels a prompt."
   [config cli-vars _opts]
-  (check-unknown-keys! config cli-vars)
-  (let [needs-prompt? (fn [v] (not (contains? cli-vars (name (:key v)))))]
-    (if-not (some needs-prompt? (:vars config))
-      (resolve-from-cli config cli-vars)
+  (let [pre (precheck-cli config cli-vars)]
+    (if (every? (fn [v] (contains? pre (name (:key v)))) (:vars config))
+      pre
       (tui/with-inline-session
         (loop [vars (:vars config)
-               answers {}]
+               answers {}
+               skipped #{}]
           (if (empty? vars)
             answers
             (let [var (first vars)
                   skey (name (:key var))]
-              (if (contains? cli-vars skey)
-                (recur (rest vars) (assoc answers skey (coerce-answer var (get cli-vars skey))))
+              (cond
+                (not (applies? var answers skipped))
+                (if (contains? cli-vars skey)
+                  (skip-error var skipped)
+                  (recur (rest vars) (assoc answers skey (skipped-value var)) (conj skipped skey)))
+
+                (contains? cli-vars skey)
+                (recur (rest vars) (assoc answers skey (coerce-answer var (get cli-vars skey))) skipped)
+
+                :else
                 (let [ans (prompt-var var)]
                   (if (nil? ans)
                     nil
-                    (recur (rest vars) (assoc answers skey ans))))))))))))
+                    (recur (rest vars) (assoc answers skey ans) skipped)))))))))))

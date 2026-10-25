@@ -1,6 +1,8 @@
 (ns frame.prompt-test
   (:require [clojure.test :refer [deftest is]]
-            [frame.prompt :as prompt]))
+            [frame.config :as config]
+            [frame.prompt :as prompt]
+            [string :as str]))
 
 (defn- threw [f]
   (try (f) :no-throw (catch e (ex-data e))))
@@ -101,6 +103,183 @@
 
 (deftest ask-headless-when-no-vars
   (is (= {} (prompt/ask! {:vars []} {} {}))))
+
+;; ---------------------------------------------------------------------------
+;; :when — skipped vars
+;; ---------------------------------------------------------------------------
+
+(defn- when-cfg
+  "Config with frontend/auth/daisyui/theme plus the transitive flavor/ssr pair,
+   normalized so :when-cond/:when-refs are attached."
+  []
+  {:vars (config/normalize-vars
+           [{:key :frontend
+             :prompt "Frontend"
+             :type :enum
+             :options ["htmx" "re-frame" "react" "none"]
+             :default "htmx"}
+            {:key :auth
+             :prompt "Auth?"
+             :type :boolean
+             :default true
+             :when "frontend == htmx"}
+            {:key :flavor
+             :prompt "Flavor"
+             :type :enum
+             :options ["reagent" "uix"]
+             :default "reagent"
+             :when "frontend == re-frame"}
+            {:key :ssr
+             :prompt "SSR?"
+             :type :boolean
+             :default true
+             :when "flavor != uix"}
+            {:key :daisyui
+             :prompt "DaisyUI?"
+             :type :boolean
+             :default true
+             :when "frontend != none"}
+            {:key :theme
+             :prompt "Theme"
+             :type :enum
+             :options ["light" "dark"]
+             :default "light"
+             :when "daisyui"}])
+   :computed {}
+   :raw []})
+
+(deftest skipped-value-is-falsy-by-type
+  (is (= false (prompt/skipped-value {:type :boolean})))
+  (is (= "" (prompt/skipped-value {:type :enum})))
+  (is (= "" (prompt/skipped-value {:type :string}))))
+
+(deftest skipped-keys-follow-transitive-skips
+  (is (= #{"auth" "flavor" "ssr"}
+         (prompt/skipped-keys (:vars (when-cfg))
+                              {"frontend" "react"
+                               "auth" false
+                               "flavor" ""
+                               "ssr" false
+                               "daisyui" true
+                               "theme" "light"})))
+  (is (= #{} (prompt/skipped-keys (:vars cfg) {"db" "sqlite"
+                                               "auth" true
+                                               "author" ""}))))
+
+(deftest skipped-keys-ignores-later-vars-shadowing-a-literal
+  ;; `htmx` in the :when is a bare literal; the boolean var declared after it
+  ;; must not change what it means.
+  (let [vars (config/normalize-vars
+               [{:key :frontend
+                 :prompt "Frontend"
+                 :type :enum
+                 :options ["htmx" "react"]
+                 :default "htmx"}
+                {:key :auth
+                 :prompt "Auth?"
+                 :type :boolean
+                 :default false
+                 :when "frontend == htmx"}
+                {:key :htmx
+                 :prompt "htmx?"
+                 :type :boolean
+                 :default false}])]
+    (is (= #{} (prompt/skipped-keys vars {"frontend" "htmx"
+                                          "auth" false
+                                          "htmx" false})))))
+
+(deftest transitive-skip-ignores-not-equal-on-skipped-value
+  ;; flavor is skipped (""), so `flavor != uix` would be true on its own;
+  ;; ssr must still be skipped because it asks about a skipped answer.
+  (let [a (prompt/resolve-answers (when-cfg) {"frontend" "react"} {:defaults? true})]
+    (is (= "" (get a "flavor")))
+    (is (= false (get a "ssr")))))
+
+(deftest transitive-skip-rejects-var-flag
+  (let [r (threw #(prompt/resolve-answers (when-cfg)
+                                          {"frontend" "react"
+                                           "ssr" "true"}
+                                          {:defaults? true}))]
+    (is (= :var (:reason r)))))
+
+(deftest resolve-skips-false-when-and-defaults-the-rest
+  (let [a (prompt/resolve-answers (when-cfg) {"frontend" "react"} {:defaults? true})]
+    (is (= false (get a "auth")))
+    (is (= true (get a "daisyui")))
+    (is (= "light" (get a "theme")))))
+
+(deftest resolve-skips-chained-var
+  (let [a (prompt/resolve-answers (when-cfg) {"frontend" "none"} {:defaults? true})]
+    (is (= false (get a "daisyui")))
+    (is (= "" (get a "theme")))))
+
+(deftest resolve-applies-when-true
+  (let [a (prompt/resolve-answers (when-cfg) {"frontend" "htmx"} {:defaults? true})]
+    (is (= true (get a "auth")))))
+
+(deftest var-flag-for-skipped-var-errors
+  (let [msg (try (prompt/resolve-answers (when-cfg)
+                                         {"frontend" "react"
+                                          "auth" "true"}
+                                         {:defaults? true})
+                 nil
+                 (catch e {:data (ex-data e)
+                           :msg (ex-message e)}))]
+    (is (= :var (:reason (:data msg))))
+    (is (str/includes? (:msg msg) "does not apply"))))
+
+(deftest skipped-string-var-is-not-validated
+  (let [c {:vars (config/normalize-vars
+                   [{:key :flag
+                     :prompt "Flag?"
+                     :type :boolean
+                     :default false}
+                    {:key :author
+                     :prompt "Author"
+                     :type :string
+                     :validate {:pattern "^.+$"}
+                     :when "flag"}])
+           :computed {}
+           :raw []}
+        a (prompt/resolve-answers c {} {:defaults? true})]
+    (is (= "" (get a "author")))))
+
+(deftest precheck-cli-rejects-var-for-determinably-skipped
+  (is (= :var (:reason (threw #(prompt/precheck-cli (when-cfg)
+                                                    {"frontend" "react"
+                                                     "auth" "true"}))))))
+
+(deftest precheck-cli-leaves-undeterminable-vars-alone
+  (let [m (prompt/precheck-cli (when-cfg) {"auth" "true"})]
+    (is (= {"auth" true} m))))
+
+(deftest precheck-cli-includes-determinable-skips
+  (let [m (prompt/precheck-cli (when-cfg) {"frontend" "react"})]
+    (is (= "react" (get m "frontend")))
+    (is (= false (get m "auth")))
+    (is (= "" (get m "flavor")))
+    (is (= false (get m "ssr")))
+    (is (not (contains? m "daisyui")))))
+
+(deftest ask-headless-with-skipped-vars
+  ;; frontend=react skips auth/flavor/ssr; the rest are given, so no session opens.
+  (is (= {"frontend" "react"
+          "auth" false
+          "flavor" ""
+          "ssr" false
+          "daisyui" true
+          "theme" "dark"}
+         (prompt/ask! (when-cfg)
+                      {"frontend" "react"
+                       "daisyui" "true"
+                       "theme" "dark"}
+                      {}))))
+
+(deftest ask-rejects-skipped-var-before-prompting
+  (is (= :var (:reason (threw #(prompt/ask! (when-cfg)
+                                            {"frontend" "react"
+                                             "auth" "true"}
+                                            {}))))))
 
 ;; ---------------------------------------------------------------------------
 ;; compute-vars

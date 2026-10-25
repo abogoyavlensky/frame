@@ -9,6 +9,7 @@ A template is a plain directory (or git repo) with a `frame.edn` config and a `t
 ```
 brew install abogoyavlensky/tap/frame
 frame new <source> [name] [options]
+frame check <source> [--json]
 ```
 
 `<source>` is a local directory path or an `https://host/owner/repo` git URL. `[name]` is the project name; omit it to be prompted. The name must match `^[a-z][a-z0-9-]*$`.
@@ -44,7 +45,79 @@ frame new ./my-template my-app --defaults --dir ./existing --force
 frame new https://github.com/owner/repo my-app
 ```
 
-On success `frame` prints the created-file count, the target directory, a summary of the declared template variables with the values that were used, and the next step. A resolution, configuration, or generation error prints `frame: <message>` and exits 1. Cancelling a prompt exits 1 and writes nothing. Invalid command-line syntax (an unknown option or a missing `<source>`) is reported by the argument parser and exits 2.
+On success `frame` prints the created-file count, the target directory, a summary of the declared template variables with the values that were used, and the next steps. A variable that did not apply to the chosen answers is marked `(skipped)` in the summary (see `:when` below). A resolution, configuration, or generation error prints `frame: <message>` and exits 1. Cancelling a prompt exits 1 and writes nothing. Invalid command-line syntax (an unknown option or a missing `<source>`) is reported by the argument parser and exits 2.
+
+### Checking a template
+
+```
+frame check <source> [--json]
+```
+
+`frame check` renders the template in memory for every valid combination of answers and reports what breaks. It never writes files. `<source>` resolves the same way as for `frame new`.
+
+Combinations come from the declared vars in order: each enum option, both values of each boolean, and one value for each string var (its default, or `example` when it has none). A var skipped by its `:when` adds no branch, so only valid combinations are rendered. `project-name` is fixed to `example-app`.
+
+It reports two kinds of problem:
+
+- **Errors** from any combination: an unresolved variable, a syntax error in a tag, a destination collision, a path that escapes the target, or a broken `:next-steps` entry. Errors are grouped by message, with how many combinations hit each one and an example.
+- **Never-generated files**: template files that no combination produces, usually a typo in a path condition such as `{% if frontend == htmxx %}`. These count as failures. They are only reported when there are no errors.
+
+```
+$ frame check ../my-template
+Checked 16 combinations of ../my-template: OK
+```
+
+On failure the output lists each problem and `frame` exits 1:
+
+```
+src/{{project-name|snake_case}}/views.clj:3: unresolved variable: fronted
+  in 4 of 16 combinations, e.g. db=sqlite frontend=htmx auth=true
+never generated in any combination: resources/{% if frontend == htmxx %}x.css{% endif %}
+```
+
+With `--json`, `frame check` prints a single object to stdout and uses the same exit codes:
+
+```json
+{"ok": true,
+ "count": 16,
+ "combinations": [{"answers": {"db": "sqlite", "auth": true},
+                   "vars": "db=sqlite,auth=true"}],
+ "errors": [],
+ "never_generated": []}
+```
+
+`answers` holds every declared var, skipped ones included with their skipped value. `vars` lists only the vars that applied, as a string you can pass to `frame new --defaults --var`. Values that contain a comma cannot be passed through `--var`, so `vars` is not replayable for them. Config and source errors print `frame: <message>` on stderr and exit 1 without JSON.
+
+Use it in CI to build one job per combination. This workflow fails if any combination does not render, then generates a project for each combination:
+
+```yaml
+jobs:
+  combinations:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.check.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install abogoyavlensky/tap/frame
+      - id: check
+        run: |
+          frame check . --json > check.json
+          echo "matrix=$(jq -c '{vars: [.combinations[].vars]}' check.json)" >> "$GITHUB_OUTPUT"
+
+  generate:
+    needs: combinations
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.combinations.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install abogoyavlensky/tap/frame
+      - run: frame new --defaults --var "$VARS" . app
+        env:
+          VARS: ${{ matrix.vars }}
+```
+
+The matrix value goes through an environment variable so the shell never interprets it. Template defaults and options are data, and a value such as `$(...)` would otherwise run as a command.
 
 ## Installation
 
@@ -95,9 +168,13 @@ Everything under `template/` is copied to the output. File and directory names a
  :vars [{:key :db :prompt "Database" :type :enum
          :options ["sqlite" "postgres"] :default "sqlite"}
         {:key :auth :prompt "Include authentication?" :type :boolean :default true}
+        {:key :pool :prompt "Connection pool size" :type :string :default "10"
+         :when "db == postgres"}                                          ; :when optional
         {:key :author :prompt "Author name" :type :string :default ""
          :validate {:pattern "^.+$" :msg "Author name cannot be empty"}}]  ; :validate optional
  :computed {:top-ns "{{ project-name | snake_case }}"}
+ :next-steps ["mise trust && mise install"       ; optional
+              "{% if db == postgres %}docker compose up -d{% endif %}"]
  :raw ["**/*.png"]}
 ```
 
@@ -105,13 +182,58 @@ Everything under `template/` is copied to the output. File and directory names a
   - `:string` renders a text input. An optional `:validate {:pattern "..." :msg "..."}` rejects input that does not match the pattern.
   - `:enum` renders a picker. It needs a non-empty `:options` vector; `:default` must be one of them.
   - `:boolean` renders a yes/no choice.
+- **`:when`** (optional, on any var) makes the question conditional. It takes a condition string in the same syntax as `{% if %}` tags (see below), for example `:when "frontend == htmx"`. See [Conditional vars](#conditional-vars).
 - **`project-name`** is a built-in first variable. You never declare it. It comes from the positional `[name]` argument or its own prompt, and it is available in every template and computed value.
 - **`now-date`** and **`now-year`** are built-in variables holding the generation date (`2026-07-10`) and year (`2026`). Like `project-name`, they are always available, and all three names are reserved: declaring them in `:vars` or setting them with `--var` is an error.
 - **`:min-frame-version`** is an optional exact semver string (`"0.3.0"`) naming the oldest frame release the template works with. An older frame refuses to generate — before any prompting — and asks the user to upgrade. Anything other than an exact `X.Y.Z` string is a config error.
 - **`:computed`** maps variable names to templates rendered against the answers after all questions. Computed values run in a single pass, so one computed value cannot reference another.
+- **`:next-steps`** (optional) is a vector of one-line templates printed after generation. See [Next steps](#next-steps).
 - **`:raw`** is a list of glob patterns (relative to `:root`) copied verbatim, without content rendering. `*` matches within a path segment; `**` matches across segments. Any file with a null byte in its first 8000 bytes is also copied verbatim. Raw and binary files still get their *paths* rendered.
 
-A missing or unparsable `frame.edn`, a too-old frame for `:min-frame-version`, an unknown `:type`, a missing `:options` on an enum, or a `:default` outside `:options` is reported before any prompting. An unrecognized top-level key in `frame.edn` prints a warning on stderr but does not block generation.
+A missing or unparsable `frame.edn`, a too-old frame for `:min-frame-version`, an unknown `:type`, a missing `:options` on an enum, a `:default` outside `:options`, an invalid `:when`, or a `:next-steps` that is not a vector of strings is reported before any prompting. An unrecognized top-level key in `frame.edn` prints a warning on stderr but does not block generation.
+
+### Conditional vars
+
+Some questions only make sense for some answers. Give a var a `:when` condition and `frame` asks it only when the condition is true:
+
+```edn
+{:key :frontend :prompt "Frontend" :type :enum
+ :options ["htmx" "re-frame" "react" "none"] :default "htmx"}
+{:key :auth :prompt "Include auth?" :type :boolean :default false
+ :when "frontend == htmx"}
+{:key :daisyui :prompt "Include DaisyUI?" :type :boolean :default false
+ :when "frontend != none"}
+```
+
+Vars are resolved in declared order, so a condition can only refer to vars declared **before** the one that carries it. When the condition is false, the var is **skipped**: it is not asked, not defaulted, and takes a falsy value of its type, `false` for a boolean and `""` for an enum or string. A skipped var is still defined, so `{% if auth %}`, `{% if not auth %}`, and `{{ auth }}` all work, and a `{% case %}` on a skipped enum falls through to `{% else %}`. A skipped string var is not run through `:validate`.
+
+Skips chain. A var is also skipped when its condition refers to a skipped var, without the condition being evaluated. In the example, if `frontend` is `none`, `daisyui` is skipped, and so would be a var with `:when "daisyui"`.
+
+Passing a skipped var with `--var` is an error (`var auth does not apply: ...`). `frame new` checks the `--var` answers before the first prompt, so `--var frontend=react,auth=true` fails immediately instead of generating a broken project.
+
+`frame` checks each `:when` when it reads `frame.edn`, so a typo fails at once instead of silently never matching:
+
+- The condition must parse, and every name it uses must be an earlier var. `project-name` and the `now-*` built-ins are not allowed.
+- A comparison needs a var on at least one side. `fronted == htmx` is rejected as comparing two literals.
+- A literal compared with an enum var must be one of its options, and a literal compared with a boolean var must be `true` or `false`. `frontend == htmxx` is rejected.
+
+Run [`frame check`](#checking-a-template) to render every combination that remains valid.
+
+### Next steps
+
+`:next-steps` is a vector of strings that `frame` prints under `Next steps:` after generation, after its own `cd <target>` line. Each entry is a one-line template, rendered with the final answers, `project-name`, the built-ins, and computed values. Tags work inline and leave nothing behind, and an entry that renders blank is dropped, the same rule as an empty path segment:
+
+```edn
+:next-steps ["mise trust && mise install"
+             "{% if db == postgres %}docker compose up -d{% endif %}"
+             "bb clj-repl"]
+```
+
+Steps are rendered before anything is written, so a broken step aborts with no files created.
+
+### Compatibility
+
+An older frame ignores `:when` and `:next-steps` without an error: it would ask every question and print no steps. A template that uses either should set `:min-frame-version` to the first frame release that ships them, so older versions ask the user to upgrade.
 
 ### Template syntax
 
@@ -230,8 +352,8 @@ If two files render to the same destination and both survive, generation fails a
 ## Shell completions
 
 `frame completion <shell>` prints a completion script for bash, zsh, or fish.
-Completions cover the subcommands (`new`, `completion`, `help`) and the options
-of `new` (`--defaults`, `--dir`, `--var`). The `<source>` argument falls back to
+Completions cover the subcommands (`new`, `check`, `completion`, `help`) and the
+options of `new` (`--defaults`, `--dir`, `--var`, `--force`) and `check` (`--json`). The `<source>` argument falls back to
 the shell's own filename completion, which is what you want for a local template
 path.
 

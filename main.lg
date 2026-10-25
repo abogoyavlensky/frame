@@ -1,5 +1,6 @@
 (ns frame.main
-  (:require [frame.new :as new]
+  (:require [frame.check :as check]
+            [frame.new :as new]
             [frame.version :as version]
             [tiny-cli.core :as cli]))
 
@@ -29,7 +30,15 @@
                       {:key :force?
                        :long "force"
                        :doc "Generate into the target directory even if it already contains files (overwrites on collision)."}]
-               :run new/cmd-new!}]})
+               :run new/cmd-new!}
+              {:name "check"
+               :doc "Render every valid combination of answers in memory and report errors."
+               :args [{:key :source
+                       :doc "Template source: a local directory or https://host/owner/repo."}]
+               :opts [{:key :json?
+                       :long "json"
+                       :doc "Print the result as JSON (for CI matrices)."}]
+               :run check/cmd-check!}]})
 
 (defn- main []
   (cli/run! app *command-line-args*))

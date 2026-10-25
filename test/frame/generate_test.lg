@@ -230,3 +230,51 @@
       (is (= "keep-me" (slurp (str target "/keep.txt"))))
       (is (= "from-template" (slurp (str target "/README.md"))))
       (os/sh "rm" "-rf" tpl target))))
+
+;; ---------------------------------------------------------------------------
+;; render-entries / source-files (pure, used by `frame check`)
+;; ---------------------------------------------------------------------------
+
+(deftest render-entries-matches-expected-tree-and-writes-nothing
+  (let [cfg (config/read-config demo-template)
+        entries (generate/render-entries demo-template
+                                         {"project-name" "demo-app"
+                                          "db" "sqlite"
+                                          "auth" true
+                                          "top-ns" "demo_app"}
+                                         cfg)]
+    (is (= (set (keys (tree-map demo-expected)))
+           (set (map :dst entries))))
+    (is (every? :src entries))
+    (is (every? string? (map :content entries)))))
+
+(deftest render-entries-path-error-names-the-source-file
+  (let [tpl (tmp-dir)]
+    (mkdir (str tpl "/template"))
+    (spit (str tpl "/frame.edn") (pr-str {:vars []}))
+    (spit (str tpl "/template/{{ missing }}-x.txt") "A")
+    (let [cfg (config/read-config tpl)
+          r (threw #(generate/render-entries tpl {} cfg))]
+      (os/sh "rm" "-rf" tpl)
+      (is (str/starts-with? (:msg r) "{{ missing }}-x.txt: "))
+      (is (str/includes? (:msg r) "unresolved variable")))))
+
+(deftest render-entries-throws-on-collision
+  (let [tpl (tmp-dir)]
+    (mkdir (str tpl "/template/{% if x %}dir{% endif %}"))
+    (mkdir (str tpl "/template/{% if y %}dir{% endif %}"))
+    (spit (str tpl "/frame.edn") (pr-str {:vars []}))
+    (spit (str tpl "/template/{% if x %}dir{% endif %}/f.txt") "A")
+    (spit (str tpl "/template/{% if y %}dir{% endif %}/f.txt") "B")
+    (let [cfg (config/read-config tpl)
+          r (threw #(generate/render-entries tpl {"x" true
+                                                  "y" true} cfg))]
+      (os/sh "rm" "-rf" tpl)
+      (is (= :collision (:reason (:data r)))))))
+
+(deftest source-files-lists-sorted-root-relative-paths
+  (let [cfg (config/read-config demo-template)
+        files (generate/source-files demo-template cfg)]
+    (is (= (vec (sort files)) files))
+    (is (some #{"{% if auth %}auth{% endif %}/handlers.clj"} files))
+    (is (some #{"README.md"} files))))

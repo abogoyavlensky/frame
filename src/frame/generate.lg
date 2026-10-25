@@ -66,14 +66,31 @@
   (or (str/starts-with? dst "/")
       (some (fn [s] (= s "..")) (str/split dst "/"))))
 
+(defn- with-src-context
+  "Call thunk `f`; a render error is re-thrown with a template-relative
+   prefix naming `rel-src`, plus the line when `line?` (content errors; a path
+   segment's own line number is meaningless)."
+  [rel-src line? f]
+  (let [res (try {:ok (f)}
+                 (catch e {:err e}))]
+    (if-let [e (:err res)]
+      (let [data (or (ex-data e) {})
+            loc (if (and line? (:line data)) (str rel-src ":" (:line data)) rel-src)]
+        (throw (ex-info (str loc ": " (ex-message e))
+                        (assoc data
+                               :file rel-src
+                               :reason (or (:reason data) :render)))))
+      (:ok res))))
+
 (defn- build-entries
   "Build {:dst :content :src} for every surviving file, all in memory. Render
-   errors are re-thrown with a template-relative file:line prefix."
+   errors in paths and contents are re-thrown with a template-relative
+   file:line prefix."
   [root answers config]
   (reduce
     (fn [acc abs]
       (let [rel-src (relative-to root abs)
-            dst (render-path rel-src answers)]
+            dst (with-src-context rel-src false (fn [] (render-path rel-src answers)))]
         (cond
           (nil? dst)
           acc
@@ -88,16 +105,7 @@
           (let [content (slurp abs)
                 out (if (raw-file? config rel-src content)
                       content
-                      (try
-                        (render/render-string content answers)
-                        (catch e
-                               (let [data (or (ex-data e) {})
-                                     line (:line data)
-                                     loc (if line (str rel-src ":" line) rel-src)]
-                                 (throw (ex-info (str loc ": " (ex-message e))
-                                                 (assoc data
-                                                        :file rel-src
-                                                        :reason (or (:reason data) :render))))))))]
+                      (with-src-context rel-src true (fn [] (render/render-string content answers))))]
             (conj acc {:dst dst
                        :content out
                        :src rel-src})))))
@@ -139,13 +147,27 @@
 ;; Public entry
 ;; ---------------------------------------------------------------------------
 
+(defn render-entries
+  "Render every surviving template file in memory and check for destination
+   collisions, without writing anything. Returns [{:dst :content :src} ...] and
+   throws exactly like `generate!` would."
+  [template-repo-dir answers config]
+  (let [root (str template-repo-dir "/" (:root config))
+        entries (build-entries root answers config)]
+    (check-collisions! entries)
+    entries))
+
+(defn source-files
+  "Sorted vector of every template source file, relative to the template root."
+  [template-repo-dir config]
+  (let [root (str template-repo-dir "/" (:root config))]
+    (vec (map (fn [abs] (relative-to root abs)) (walk-files root)))))
+
 (defn generate!
   "Render the template at template-repo-dir into target using answers/config.
    Everything is rendered in memory and collision-checked before any write, so
    a render/collision error leaves target untouched. Returns the file count."
   [template-repo-dir target answers config]
-  (let [root (str template-repo-dir "/" (:root config))
-        entries (build-entries root answers config)]
-    (check-collisions! entries)
+  (let [entries (render-entries template-repo-dir answers config)]
     (write-entries! target entries)
     (count entries)))

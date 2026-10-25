@@ -50,6 +50,12 @@
             (truthy? (:value node))
             (truthy? (get vars (:value node))))))
 
+(defn eval-condition
+  "Evaluate a `parser/parse-cond` AST against string-keyed vars. Returns a
+   boolean. Same semantics as `{% if %}` conditions."
+  [ast vars]
+  (boolean (eval-cond vars ast)))
+
 ;; ---------------------------------------------------------------------------
 ;; Node rendering
 ;; ---------------------------------------------------------------------------
