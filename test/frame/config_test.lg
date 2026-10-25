@@ -240,3 +240,101 @@
                              :prompt "P"
                              :type :string}]})]
     (is (= :config (:reason (:error r))))))
+
+;; ---------------------------------------------------------------------------
+;; :when on vars
+;; ---------------------------------------------------------------------------
+
+(def ^:private frontend-var
+  {:key :frontend
+   :prompt "Frontend"
+   :type :enum
+   :options ["htmx" "react" "none"]
+   :default "htmx"})
+
+(def ^:private flag-var
+  {:key :flag
+   :prompt "Flag?"
+   :type :boolean
+   :default false})
+
+(defn- auth-var [when-str]
+  {:key :auth
+   :prompt "Auth?"
+   :type :boolean
+   :default false
+   :when when-str})
+
+;; Read a config of frontend + flag + an auth var gated on `when-str`.
+(defn- read-when [when-str]
+  (read-cfg {:vars [frontend-var flag-var (auth-var when-str)]}))
+
+(defn- config-error? [r substr]
+  (and (= :config (:reason (:error r)))
+       (str/includes? (:msg r) substr)))
+
+(deftest when-attaches-cond-and-refs
+  (let [r (read-when "frontend == htmx")
+        [fe _ auth] (:vars r)]
+    (is (map? (:when-cond auth)))
+    (is (= #{"frontend"} (:when-refs auth)))
+    (is (= "frontend == htmx" (:when auth)))
+    (is (not (contains? fe :when-cond)))
+    (is (not (contains? fe :when-refs)))))
+
+(deftest when-refs-collect-every-reference
+  (let [r (read-when "frontend != none and flag")]
+    (is (= #{"frontend" "flag"} (:when-refs (nth (:vars r) 2))))))
+
+(deftest when-must-be-a-string
+  (is (config-error? (read-cfg {:vars [frontend-var (auth-var :htmx)]}) ":when")))
+
+(deftest when-unparsable-errors
+  (is (config-error? (read-when "frontend ==") "invalid :when")))
+
+(deftest when-unknown-or-later-var-errors
+  (is (config-error? (read-when "frontnd") "unknown or later var"))
+  (is (config-error? (read-when "auth") "unknown or later var"))
+  (is (config-error? (read-when "not project-name") "unknown or later var"))
+  (let [later (read-cfg {:vars [(auth-var "frontend") frontend-var]})]
+    (is (config-error? later "unknown or later var"))))
+
+(deftest when-project-name-comparison-errors
+  (is (config-error? (read-when "project-name == app") "compares two literals")))
+
+(deftest when-two-literals-errors
+  (is (config-error? (read-when "fronted == htmx") "compares two literals")))
+
+(deftest when-enum-literal-must-be-an-option
+  (is (config-error? (read-when "frontend == htmxx") "not an option"))
+  (is (config-error? (read-when "htmxx == frontend") "not an option"))
+  (is (config-error? (read-when "frontend != \"htmxx\"") "not an option"))
+  (is (map? (:when-cond (nth (:vars (read-when "frontend == \"htmx\"")) 2))))
+  (is (map? (:when-cond (nth (:vars (read-when "htmx == frontend")) 2)))))
+
+(deftest when-boolean-literal-must-be-true-or-false
+  (is (config-error? (read-when "flag == yes") "true or false"))
+  (is (map? (:when-cond (nth (:vars (read-when "flag == true")) 2)))))
+
+(deftest when-comparing-two-known-vars-is-allowed
+  (let [r (read-when "frontend == flag")]
+    (is (= #{"frontend" "flag"} (:when-refs (nth (:vars r) 2))))))
+
+;; ---------------------------------------------------------------------------
+;; :next-steps
+;; ---------------------------------------------------------------------------
+
+(deftest next-steps-defaults-to-empty
+  (is (= [] (:next-steps (read-cfg {:vars []})))))
+
+(deftest next-steps-accepts-vector-of-strings
+  (let [r (read-cfg {:vars []
+                     :next-steps ["a" "b"]})]
+    (is (= ["a" "b"] (:next-steps r)))
+    (is (= [] (:warnings r)))))
+
+(deftest next-steps-rejects-non-vector-and-non-strings
+  (is (= :config (:reason (:error (read-cfg {:vars []
+                                             :next-steps "a"})))))
+  (is (= :config (:reason (:error (read-cfg {:vars []
+                                             :next-steps [1]}))))))

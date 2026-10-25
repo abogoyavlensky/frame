@@ -169,11 +169,11 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 - Modify: `src/frame/template/render.lg`
 - Test: `test/frame/template/render_test.lg`
 
-- [ ] **Step 1: Write failing tests** for `render/eval-condition`: takes a `parser/parse-cond` AST and a string-keyed vars map. Cases: `frontend == htmx` true/false; `not auth` with `auth` = `false` and with `auth` = `""`; `frontend != none and daisyui`.
-- [ ] **Step 2: Run** `lgx test` — expect the new tests to fail (unresolved var).
-- [ ] **Step 3: Implement** `(defn eval-condition [ast vars] (boolean (eval-cond vars ast)))` with a docstring. Leave `eval-cond` private.
-- [ ] **Step 4: Run** `lgx test` — PASS.
-- [ ] **Step 5: Commit** `git commit -m "feat: expose condition evaluation for frame.edn conditions"`
+- [x] **Step 1: Write failing tests** for `render/eval-condition`: takes a `parser/parse-cond` AST and a string-keyed vars map. Cases: `frontend == htmx` true/false; `not auth` with `auth` = `false` and with `auth` = `""`; `frontend != none and daisyui`.
+- [x] **Step 2: Run** `lgx test` — expect the new tests to fail (unresolved var).
+- [x] **Step 3: Implement** `(defn eval-condition [ast vars] (boolean (eval-cond vars ast)))` with a docstring. Leave `eval-cond` private.
+- [x] **Step 4: Run** `lgx test` — PASS.
+- [x] **Step 5: Commit** `git commit -m "feat: expose condition evaluation for frame.edn conditions"`
 
 ### Task 2: Config — `:when` and `:next-steps` validation
 
@@ -181,7 +181,7 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 - Modify: `src/frame/config.lg`
 - Test: `test/frame/config_test.lg`
 
-- [ ] **Step 1: Write failing tests** (via the existing `read-cfg` helper):
+- [x] **Step 1: Write failing tests** (via the existing `read-cfg` helper):
   - valid `:when` → normalized var has `:when-cond` (a map), `:when-refs` (`#{"frontend"}`), and the original `:when`; a var without `:when` has neither.
   - `:when` not a string → `:config`; unparsable (`"frontend =="`) → `:config` with `invalid :when` in the message.
   - references a later var, itself, an undeclared name in a bare term, or `project-name` → `:config`.
@@ -189,14 +189,14 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
   - `"frontend == htmxx"` (not an option) → `:config`, message contains `not an option`; `"htmx == frontend"` (reversed) also checked; quoted `"frontend == \"htmx\""` accepted.
   - boolean compared with `yes` → `:config`; with `true` accepted.
   - `:next-steps` defaults to `[]`; `["a" "b"]` accepted; `"a"` or `[1]` → `:config`; `:next-steps` produces no unrecognized-key warning.
-- [ ] **Step 2: Run** `lgx test` — new tests fail.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run** `lgx test` — new tests fail.
+- [x] **Step 3: Implement.**
   - `normalize-vars [vars]`: reduce in order, carrying the vars validated so far; for each var run `validate-var` then `validate-when` against the earlier vars; return the vector. `read-config` calls it instead of `(map validate-var …)`.
   - `validate-when [v earlier]` (private): no-op without `:when`; parse with `parser/parse-cond` (catch its ex-info and rethrow as a config error naming the var); walk the AST (`:or`/`:and` → left+right, `:not` → `:expr`, `:cmp`, `:term`) applying the rules in the Design; return `(assoc v :when-cond ast :when-refs refs)`.
   - `:next-steps`: validate as a vector of strings; normalized default `[]`; add to `known-keys`.
   - Require `frame.template.parser` in `config.lg`.
-- [ ] **Step 4: Run** `lgx test` — PASS.
-- [ ] **Step 5: Commit** `git commit -m "feat: validate :when conditions and :next-steps in frame.edn"`
+- [x] **Step 4: Run** `lgx test` — PASS.
+- [x] **Step 5: Commit** `git commit -m "feat: validate :when conditions and :next-steps in frame.edn"`
 
 ### Task 3: Prompt — skip, reject, and pre-check
 

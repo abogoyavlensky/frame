@@ -1,5 +1,6 @@
 (ns frame.config
   (:require [edn]
+            [frame.template.parser :as parser]
             [frame.version :as version]))
 
 ;; ---------------------------------------------------------------------------
@@ -7,7 +8,7 @@
 ;;
 ;; read-config returns a normalized map with defaults applied:
 ;;   {:description s|nil :root "template" :vars [...] :computed {} :raw []
-;;    :warnings [s ...]}
+;;    :next-steps [] :warnings [s ...]}
 ;; :warnings lists unrecognized top-level keys; it never blocks generation.
 ;; Every failure throws ex-info {:reason :config ...} before any prompting.
 ;; ---------------------------------------------------------------------------
@@ -15,7 +16,7 @@
 (def ^:private valid-types #{:string :enum :boolean})
 
 (def ^:private known-keys
-  #{:description :root :vars :computed :raw :min-frame-version})
+  #{:description :root :vars :computed :raw :next-steps :min-frame-version})
 
 (def ^:private reserved-var-names #{"project-name" "now-date" "now-year"})
 
@@ -79,6 +80,89 @@
                         {:var k}))))
     v))
 
+;; ---------------------------------------------------------------------------
+;; :when validation. A condition may only reference vars declared before the
+;; var that carries it, so the prompt loop can always evaluate it. Literal
+;; operands are checked against the referenced var so a typo such as
+;; `frontend == htmxx` fails at load instead of silently never matching.
+;; ---------------------------------------------------------------------------
+
+(defn- when-error [v msg]
+  (config-error (str "var " (:key v) " :when" msg) {:var (:key v)}))
+
+(defn- check-literal!
+  "A literal compared against known var `ref-var` must be one of its options
+   (enum) or true/false (boolean). String vars accept anything."
+  [v ref-var lit]
+  (case (:type ref-var)
+    :enum (when-not (contains? (set (:options ref-var)) lit)
+            (when-error v (str ": " (pr-str lit) " is not an option of " (:key ref-var))))
+    :boolean (when-not (contains? #{"true" "false"} lit)
+               (when-error v (str ": " (pr-str lit) " is not true or false (" (:key ref-var)
+                                  " is boolean)")))
+    nil))
+
+(defn- check-cmp
+  "Returns the set of known names referenced by a comparison node."
+  [v known node]
+  (let [side (fn [t]
+               {:term t
+                :var (when (= (:kind t) :ident) (get known (:value t)))})
+        l (side (:left node))
+        r (side (:right node))]
+    (when-not (or (:var l) (:var r))
+      (when-error v (str " compares two literals: " (pr-str (:when v)))))
+    (doseq [[known-side lit-side] [[l r] [r l]]]
+      (when (and (:var known-side) (not (:var lit-side)))
+        (check-literal! v (:var known-side) (:value (:term lit-side)))))
+    (set (map (fn [x] (:value (:term x))) (filter :var [l r])))))
+
+(defn- check-when-node [v known node]
+  (case (:op node)
+    (:or :and) (into (check-when-node v known (:left node))
+                     (check-when-node v known (:right node)))
+    :not (check-when-node v known (:expr node))
+    :cmp (check-cmp v known node)
+    :term (cond
+            (= (:kind node) :str) #{}
+            (contains? known (:value node)) #{(:value node)}
+            :else (when-error v (str " references unknown or later var "
+                                     (pr-str (:value node)))))))
+
+(defn- validate-when
+  "Parse and check v's :when against `earlier` (the vars declared before it).
+   Returns v with :when-cond (the AST) and :when-refs (set of referenced var
+   names) added; a var without :when is returned unchanged."
+  [v earlier]
+  (if-not (contains? v :when)
+    v
+    (let [src (:when v)
+          _ (when-not (string? src)
+              (when-error v (str " must be a string, got " (pr-str src))))
+          ast (try (parser/parse-cond src)
+                   (catch e
+                          (config-error (str "var " (:key v) " has invalid :when "
+                                             (pr-str src) ": " (ex-message e))
+                                        {:var (:key v)})))
+          known (into {} (map (fn [e] [(name (:key e)) e]) earlier))]
+      (assoc v
+             :when-cond ast
+             :when-refs (check-when-node v known ast)))))
+
+(defn normalize-vars
+  "Validate every var in declaration order and attach :when-cond/:when-refs to
+   those with a :when. Returns the vector of normalized vars."
+  [vars]
+  (reduce (fn [acc v] (conj acc (validate-when (validate-var v) acc)))
+          []
+          vars))
+
+(defn- validate-next-steps [steps]
+  (when-not (and (vector? steps) (every? string? steps))
+    (config-error (str ":next-steps must be a vector of strings, got " (pr-str steps))
+                  {:next-steps steps}))
+  steps)
+
 (defn read-config
   "Read and validate <dir>/frame.edn. Returns the normalized config map or
    throws ex-info {:reason :config ...}."
@@ -102,9 +186,10 @@
         (check-min-version! (:min-frame-version raw) version/current)
         {:description (:description raw)
          :root (or (:root raw) "template")
-         :vars (vec (map validate-var (or (:vars raw) [])))
+         :vars (normalize-vars (or (:vars raw) []))
          :computed (or (:computed raw) {})
          :raw (or (:raw raw) [])
+         :next-steps (validate-next-steps (if (contains? raw :next-steps) (:next-steps raw) []))
          ;; Keys may be any EDN value, so render and sort via pr-str.
          :warnings (vec (map (fn [k] (str "unrecognized key " (pr-str k) " in frame.edn"))
                              (sort-by pr-str (remove known-keys (keys raw)))))}))))
