@@ -204,7 +204,7 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
 - Modify: `src/frame/prompt.lg`
 - Test: `test/frame/prompt_test.lg`
 
-- [ ] **Step 1: Write failing tests.** Build configs with `config/normalize-vars` so `:when-cond` is present. Use the frontend/auth/daisyui shape from the Design plus a chained var (`:theme`, enum, `:when "daisyui"`).
+- [x] **Step 1: Write failing tests.** Build configs with `config/normalize-vars` so `:when-cond` is present. Use the frontend/auth/daisyui shape from the Design plus a chained var (`:theme`, enum, `:when "daisyui"`).
   - `skipped-value`: boolean → `false`, enum/string → `""`.
   - **Transitive skip with `!=`:** add enum `flavor` (`["reagent" "uix"]`, `:when "frontend == re-frame"`) and boolean `ssr` (`:when "flavor != uix"`). With `{"frontend" "react"}` and `--defaults`, `ssr` is `false` (skipped because `flavor` was skipped), not its default; `{"frontend" "react" "ssr" "true"}` → `:var` error.
   - `skipped-keys` on final answers for `frontend=react` returns `#{"auth" "flavor" "ssr"}`.
@@ -213,8 +213,8 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
   - `{"frontend" "react" "auth" "true"}` → `:var` error whose message contains `does not apply`.
   - a skipped string var with `:validate {:pattern "^.+$"}` and no default does not throw.
   - `precheck-cli`: `{"frontend" "react" "auth" "true"}` throws `:var`; `{"auth" "true"}` alone (frontend unknown) does not throw and returns a partial map without `frontend`; `{"frontend" "react"}` returns `{"frontend" "react" "auth" false}` (determinable skip included).
-- [ ] **Step 2: Run** `lgx test` — new tests fail.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run** `lgx test` — new tests fail.
+- [x] **Step 3: Implement.**
   - `applies? [var answers skipped]`: false when `(some skipped (:when-refs var))`; else true when no `:when-cond`; else `render/eval-condition`.
   - `skipped-value [var]`.
   - `skipped-keys [vars answers]`: walk vars in order, accumulating the set of names where `applies?` is false (used by the summary).
@@ -222,11 +222,11 @@ Run tests with `lgx test` from the frame repo root (baseline: 159 tests, 0 failu
   - `resolve-answers`: per var, if not `applies?` → error when the key is in `cli-vars`, else assoc the skipped value; otherwise the current logic.
   - `precheck-cli [config cli-vars]` (public): reduce over vars with a partial map and a skipped set; a var's `:when` is evaluable when every name in its `:when-refs` is a key in the partial map (skipped vars are in the map with their skipped value). Evaluable and false → throw if in `cli-vars`, else assoc skipped value. Otherwise assoc the coerced `--var` value when present.
   - `ask!`: call `precheck-cli` first. A var needs a prompt when its key is not in the pre-checked map. If none do, return the pre-checked map (it's complete). Otherwise run the loop, where each var is: not `applies?` → error if in `cli-vars`, else skipped value; in `cli-vars` → coerced value; else prompt. Delete `resolve-from-cli` (replaced by the pre-check).
-- [ ] **Step 4: Run** `lgx test` — PASS.
-- [ ] **Step 5: Manual smoke** of the interactive path (not unit-tested) with a scratch template under the scratchpad that has the frontend/auth vars:
+- [x] **Step 4: Run** `lgx test` — PASS.
+- [x] **Step 5: Manual smoke** of the interactive path (not unit-tested) with a scratch template under the scratchpad that has the frontend/auth vars:
   `lgx run -- new /path/to/scratch-tpl app --dir /tmp/x --var frontend=react,auth=true` → `frame: var auth does not apply…`, exit 1, before any prompt.
   `lgx run -- new /path/to/scratch-tpl app --dir /tmp/x` → choosing `react` skips the auth question.
-- [ ] **Step 6: Commit** `git commit -m "feat: skip vars whose :when is false and reject --var for them"`
+- [x] **Step 6: Commit** `git commit -m "feat: skip vars whose :when is false and reject --var for them"`
 
 ### Task 4: Generate — pure `render-entries` and `source-files`
 
