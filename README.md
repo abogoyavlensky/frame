@@ -112,8 +112,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: brew install abogoyavlensky/tap/frame
-      - run: frame new --defaults --var "${{ matrix.vars }}" . app
+      - run: frame new --defaults --var "$VARS" . app
+        env:
+          VARS: ${{ matrix.vars }}
 ```
+
+The matrix value goes through an environment variable so the shell never interprets it. Template defaults and options are data, and a value such as `$(...)` would otherwise run as a command.
 
 ## Installation
 
